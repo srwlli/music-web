@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Music Prompt Writer</title>
+<meta name="description" content="Turn a song type, a structure and a style into a prompt for Suno, and review lyrics line by line. Runs in your browser; nothing is sent anywhere.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23b4532a'/%3E%3Cpath d='M12 22.5a3.5 3.5 0 1 1-2-3.16V8l12-2.5v13a3.5 3.5 0 1 1-2-3.16V10.1l-8 1.66z' fill='%23fff'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="wrap top-row">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">♪</span>
+      <div>
+        <h1>music</h1>
+        <p class="tag">Prompts for Suno. Runs in your browser; nothing is sent anywhere.</p>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button role="tab" id="tab-generate" aria-controls="panel-generate" aria-selected="true">Write a prompt</button>
+      <button role="tab" id="tab-review" aria-controls="panel-review" aria-selected="false">Review lyrics</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <p id="loading" class="notice">Loading…</p>
+
+  <section id="panel-generate" role="tabpanel" aria-labelledby="tab-generate" hidden>
+    <div class="grid">
+      <div class="col">
+        <div class="card step">
+          <label for="type"><span class="num">1</span> Song type <span class="hint">what the song is for</span></label>
+          <select id="type"></select>
+          <p class="about" id="type-about"></p>
+        </div>
+
+        <div class="card step">
+          <label for="structure"><span class="num">2</span> Structure <span class="hint">the order of sections</span></label>
+          <select id="structure"></select>
+          <p class="about" id="structure-about"></p>
+          <label class="check" id="any-row" hidden><input type="checkbox" id="any"> Use it even though this song type doesn't recommend it</label>
+        </div>
+
+        <div class="card step">
+          <label for="style"><span class="num">3</span> Style <span class="hint">the sound</span></label>
+          <select id="style"></select>
+          <p class="about" id="style-about"></p>
+        </div>
+
+        <div class="card step">
+          <label for="title"><span class="num">4</span> Title <span class="hint">optional</span></label>
+          <input id="title" type="text" autocomplete="off" placeholder="Untitled">
+          <details id="details">
+            <summary>Change genre, mood, tempo…</summary>
+            <p class="small">Leave a field blank to keep the style's value, shown greyed out.</p>
+            <div class="fields">
+              <label>Genre <input data-field="genre" type="text" autocomplete="off"></label>
+              <label>Mood <input data-field="mood" type="text" autocomplete="off"></label>
+              <label>Tempo (BPM) <input data-field="tempo" type="text" inputmode="numeric" autocomplete="off"></label>
+              <label>Vocal style <input data-field="vocalStyle" type="text" autocomplete="off"></label>
+              <label class="wide">Instrumentation <input data-field="instrumentation" type="text" autocomplete="off"></label>
+            </div>
+          </details>
+        </div>
+        <p class="legend">★ recommended first choice · + also recommended</p>
+      </div>
+
+      <div class="col out">
+        <p id="gen-error" class="error" role="alert" hidden></p>
+        <div class="card">
+          <div class="out-head">
+            <h2>Style <span class="hint">paste into Suno's style field</span></h2>
+            <button class="copy" data-copy="out-style">Copy</button>
+          </div>
+          <pre id="out-style" class="box"></pre>
+        </div>
+        <div class="card">
+          <div class="out-head">
+            <h2>Lyrics <span class="hint">paste into Suno's lyrics field, then write under each tag</span></h2>
+            <button class="copy" data-copy="out-lyrics">Copy</button>
+          </div>
+          <pre id="out-lyrics" class="box tall"></pre>
+        </div>
+        <div class="card">
+          <div class="out-head">
+            <h2>Song brief <span class="hint">the whole prompt, for whoever writes the lyrics</span></h2>
+            <button class="copy" data-copy="out-prompt">Copy</button>
+          </div>
+          <pre id="out-prompt" class="box"></pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="panel-review" role="tabpanel" aria-labelledby="tab-review" hidden>
+    <div class="card" id="paste-card">
+      <label for="lyrics-in"><h2>Paste the lyrics</h2></label>
+      <p class="small">You can start with <code>Title:</code>, <code>Genre:</code>, <code>Mood:</code> and <code>Tempo:</code> lines. Mark sections with <code>[Verse 1]</code>, <code>[Chorus]</code> and so on.</p>
+      <textarea id="lyrics-in" rows="12" spellcheck="false" placeholder="Title: Lanterns&#10;&#10;[Verse 1]&#10;…"></textarea>
+      <div class="row">
+        <button id="read" class="primary">Start review</button>
+        <span id="parse-error" class="error inline" role="alert" hidden></span>
+      </div>
+    </div>
+
+    <div id="review" hidden>
+      <div class="card meta-card">
+        <div class="meta" id="meta"></div>
+        <p class="small">Genre, mood and tempo are guesses unless the lyric has <code>Genre:</code>, <code>Mood:</code> or <code>Tempo:</code> lines. Section labels are guesses only where the lyric marks none.</p>
+      </div>
+      <div class="grid">
+        <div class="col">
+          <div class="card">
+            <div class="out-head">
+              <h2>Lines</h2>
+              <div class="row tight">
+                <button id="keep-rest" class="ghost">Keep the rest</button>
+                <button id="reset" class="ghost">Start over</button>
+              </div>
+            </div>
+            <div class="progress" aria-hidden="true"><span id="bar"></span></div>
+            <p class="small" id="counts"></p>
+            <p class="small keys">Keys: <kbd>K</kbd> keep · <kbd>R</kbd> reject · <kbd>B</kbd> back · <kbd>↑</kbd><kbd>↓</kbd> move</p>
+            <ol id="lines" class="lines"></ol>
+          </div>
+        </div>
+        <div class="col out">
+          <div class="card">
+            <div class="out-head">
+              <h2>Revised lyrics <span class="hint"><code>[LYRICS NEEDED]</code> marks what to rewrite</span></h2>
+              <div class="row tight">
+                <button class="copy" data-copy="revised">Copy</button>
+                <button id="download" class="ghost">Download</button>
+              </div>
+            </div>
+            <pre id="revised" class="box tall"></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap foot">
+  <p>music <span id="version"></span>. Lyric review keeps its work in this browser only.</p>
+</footer>
+
+<script src="wasm_exec.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
