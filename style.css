@@ -95,6 +95,9 @@ main { padding-top: 20px; padding-bottom: 24px; }
 .about b { color: var(--ink); font-weight: 600; }
 .small { color: var(--muted); font-size: .85rem; margin: 6px 0; }
 .legend { color: var(--muted); font-size: .8rem; margin: 0 4px; }
+.lead { margin: 0 0 12px; }
+.reason { margin: 8px 0 0; font-size: .88rem; font-weight: 600; color: var(--accent); }
+.reason + button.ghost { margin-top: 6px; }
 
 select, input[type="text"], textarea {
   width: 100%; background: var(--box); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
@@ -129,10 +132,15 @@ button:disabled { opacity: .5; cursor: default; }
 .row.tight { margin: 0; gap: 6px; }
 
 .notice { color: var(--muted); }
+.check-ok { color: var(--keep); }
+.check-miss { color: var(--reject); }
 .error { background: var(--reject-soft); color: var(--reject); border-radius: 8px; padding: 8px 12px; margin: 0; }
 .error.inline { padding: 4px 10px; }
 
 .meta-card { margin-bottom: 16px; }
+.replace-card { margin-bottom: 16px; border-color: var(--accent); background: var(--accent-soft); }
+.replace-card p { margin: 0 0 10px; }
+#review-error { margin-bottom: 16px; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px 18px; }
 .meta div { font-size: .9rem; }
 .meta span { color: var(--muted); margin-right: 6px; }
