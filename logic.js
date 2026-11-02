@@ -132,6 +132,34 @@ const musicLogic = {
       .filter((g) => g.items.length);
   },
 
+  // tempoWords says a style's tempo and band, and wide when its range is.
+  tempoWords(style) {
+    return `${style.tempo} BPM · ${style.band}${style.wide ? ", wide" : ""}`;
+  },
+
+  // styleOption is a style's line in the list, ★ when it is the profile's own.
+  styleOption(style, own) {
+    return `${own ? "★ " : ""}${style.name} · ${musicLogic.tempoWords(style)}`;
+  },
+
+  // styleGroups returns the style list as the page shows it: For this sound
+  // first (the profile's own style, then the rest of its group by nearest
+  // tempo), then every other group in its own order, each style once. A band
+  // narrows the list to that band, but never drops the style in use, and an
+  // empty group is left out. It arranges the list and chooses nothing.
+  styleGroups(library, profile, band, inUse) {
+    const styles = library.styles || [];
+    const sound = (library.stylesFor || {})[profile] || [];
+    const shown = (s) => !band || s.band === band || s.id === inUse;
+    const first = sound.map((id) => styles.find((s) => s.id === id)).filter((s) => s && shown(s));
+    return [{ label: "For this sound", items: first }]
+      .concat((library.groups || []).map((g) => ({
+        label: g.name,
+        items: styles.filter((s) => s.group.id === g.id && !sound.includes(s.id) && shown(s)),
+      })))
+      .filter((g) => g.items.length);
+  },
+
   // restore returns the remembered song state, kept only where the library
   // still holds it: an id it no longer has falls back to the default, and a
   // pick of one is no pick.
@@ -145,6 +173,7 @@ const musicLogic = {
       structure: has(library.structures, s.structure) ? s.structure : "",
       style: has(library.styles, s.style) ? s.style : "",
       tempo: typeof s.tempo === "string" ? s.tempo : "",
+      band: has(library.bands, s.band) ? s.band : "",
       picked: {},
     };
     state.also = state.type && has(library.types, s.also) ? s.also : "";

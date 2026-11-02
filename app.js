@@ -1,13 +1,12 @@
 // The page around musicweb. All the music logic is the Go tool's own,
 // compiled to WebAssembly (cmd/musicweb); this file only draws the page,
-// calls musicCatalog, musicGenerate, musicParse, musicRebuild, musicLibrary,
-// musicSong and musicCheck, and keeps the viewer's choices in this browser.
+// calls musicParse, musicRebuild, musicLibrary, musicSong and musicCheck, and
+// keeps the viewer's choices in this browser.
 // The decisions it makes without the DOM are in logic.js, which node tests.
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const FIELDS = ["genre", "mood", "tempo", "vocalStyle", "instrumentation"];
-const TABS = ["song", "generate", "review"];
+const TABS = ["song", "review"];
 
 const store = {
   get(key) {
@@ -17,8 +16,6 @@ const store = {
     try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* storage is optional */ }
   },
 };
-
-let cat;
 
 function el(tag, attrs, ...children) {
   const n = document.createElement(tag);
@@ -57,17 +54,9 @@ function initTabs() {
   }
 }
 
-// ---- classic prompt ----
+// ---- lists ----
 
 const byId = (list, id) => list.find((x) => x.id === id);
-
-// ordered puts the recommended ids first, marked ★ then +, and the rest after.
-function ordered(list, recommended) {
-  const rec = recommended || [];
-  const first = rec.map((id, i) => ({ item: byId(list, id), mark: i === 0 ? "★ " : "+ " })).filter((x) => x.item);
-  const rest = list.filter((x) => !rec.includes(x.id)).map((item) => ({ item, mark: "" }));
-  return first.concat(rest);
-}
 
 function fill(select, rows, value) {
   select.replaceChildren(...rows.map(({ item, mark }) => el("option", { value: item.id }, mark + item.name)));
@@ -83,119 +72,6 @@ function about(node, parts) {
   });
 }
 
-function genState() {
-  const overrides = {};
-  for (const f of FIELDS) {
-    const v = document.querySelector(`[data-field="${f}"]`).value.trim();
-    if (v !== "") overrides[f] = v;
-  }
-  return {
-    type: $("type").value,
-    structure: $("structure").value,
-    style: $("style").value,
-    any: $("any").checked,
-    title: $("title").value,
-    overrides,
-  };
-}
-
-// refreshLists redraws the structure and style lists for the chosen type and
-// structure, moving a choice the new list does not recommend to its first
-// recommendation.
-function refreshLists(changed) {
-  const type = $("type").value;
-  const recStructures = type ? cat.structuresFor[type] : null;
-  let structure = $("structure").value;
-  if (changed === "type" && type && !$("any").checked && !recStructures.includes(structure)) {
-    structure = recStructures[0];
-  }
-  fill($("structure"), ordered(cat.structures, recStructures), structure);
-
-  structure = $("structure").value;
-  const recStyles = cat.stylesFor[structure] || [];
-  let style = $("style").value;
-  if ((changed === "type" || changed === "structure") && !recStyles.includes(style)) style = recStyles[0];
-  fill($("style"), ordered(cat.styles, recStyles), style);
-}
-
-function describe() {
-  const t = byId(cat.types, $("type").value);
-  about($("type-about"), t ? [t.subtitle, t.goal] : ["Any song type: every structure is open."]);
-
-  const s = byId(cat.structures, $("structure").value);
-  about($("structure-about"), [
-    s.description,
-    ["Sections", s.sections.join(" → ")],
-    ["Bars", `${s.bar_count} · ${s.typical_length}`],
-  ]);
-  const type = $("type").value;
-  $("any-row").hidden = !type || cat.structuresFor[type].includes(s.id);
-
-  const st = byId(cat.styles, $("style").value);
-  about($("style-about"), [
-    st.best_for,
-    ["Tempo", `${st.tempo} BPM`],
-    ["Vocals", st.vocal_type === "none" ? "instrumental" : st.vocal_type],
-  ]);
-}
-
-function generate(changed) {
-  if (changed === "type" || changed === "structure") refreshLists(changed);
-  describe();
-  const state = genState();
-  store.set("music.generate", state);
-
-  // The style's own values, shown greyed out in the empty fields.
-  const defaults = JSON.parse(musicGenerate(JSON.stringify({ structure: state.structure, style: state.style, type: "" })));
-  if (defaults.metadata) {
-    for (const f of FIELDS) document.querySelector(`[data-field="${f}"]`).placeholder = defaults.metadata[f] || "";
-  }
-
-  const res = JSON.parse(musicGenerate(JSON.stringify(state)));
-  $("gen-error").hidden = !res.error;
-  $("gen-error").textContent = res.error || "";
-  if (res.error) {
-    for (const id of ["out-style", "out-lyrics", "out-prompt"]) $(id).textContent = "";
-    return;
-  }
-  const p = res.prompt;
-  const cut = p.indexOf("\n\n---\n\n");
-  const styleLine = p.split("\n").find((l) => l.startsWith("Style: ")) || "";
-  $("out-style").textContent = styleLine.slice("Style: ".length);
-  $("out-lyrics").textContent = cut >= 0 ? p.slice(cut + 7) : "";
-  $("out-prompt").textContent = p;
-}
-
-function initGenerate() {
-  fill($("type"), [{ item: { id: "", name: "Any song type" }, mark: "" }].concat(cat.types.map((item) => ({ item, mark: "" }))), "");
-  fill($("structure"), ordered(cat.structures, null), cat.structures[0].id);
-  fill($("style"), ordered(cat.styles, cat.stylesFor[cat.structures[0].id]), cat.stylesFor[cat.structures[0].id][0]);
-
-  const saved = store.get("music.generate");
-  if (saved) {
-    $("type").value = byId(cat.types, saved.type) ? saved.type : "";
-    $("any").checked = !!saved.any;
-    refreshLists("type");
-    if (byId(cat.structures, saved.structure)) $("structure").value = saved.structure;
-    refreshLists("structure");
-    if (byId(cat.styles, saved.style)) $("style").value = saved.style;
-    $("title").value = saved.title || "";
-    for (const f of FIELDS) {
-      const v = saved.overrides && saved.overrides[f];
-      document.querySelector(`[data-field="${f}"]`).value = v || "";
-      if (v) $("details").open = true;
-    }
-  }
-
-  $("type").addEventListener("change", () => generate("type"));
-  $("structure").addEventListener("change", () => generate("structure"));
-  $("style").addEventListener("change", () => generate("style"));
-  $("any").addEventListener("change", () => generate("any"));
-  $("title").addEventListener("input", () => generate("title"));
-  for (const f of FIELDS) document.querySelector(`[data-field="${f}"]`).addEventListener("input", () => generate(f));
-  generate();
-}
-
 // ---- write a song ----
 
 // song is the tab's state: the Operator's choices, which of the structure
@@ -207,14 +83,18 @@ const SONG_FIELDS = musicLogic.SONG_INPUTS.concat("tempo");
 const sentence = (s) => s.charAt(0).toUpperCase() + s.slice(1) + ".";
 
 // soLists draws the structure list grouped Short, Standard, Long, each with
-// its bars and length, and the style list with the profile's own marked ★.
+// its bars and length, and the style list with this sound's styles first, the
+// profile's own marked ★, each with its tempo and band.
 function soLists() {
   const p = byId(lib.profiles, song.profile);
   $("so-structure").replaceChildren(...musicLogic.groups(lib.structures).map((g) =>
     el("optgroup", { label: g.size }, ...g.items.map((s) =>
       el("option", { value: s.id }, `${s.name} · ${s.bar_count} bars · ${s.typical_length}`)))));
   $("so-structure").value = song.structure;
-  fill($("so-style"), lib.styles.map((item) => ({ item, mark: item.id === p.style ? "★ " : "" })), song.style);
+  $("so-style").replaceChildren(...musicLogic.styleGroups(lib, song.profile, song.band, song.style).map((g) =>
+    el("optgroup", { label: g.label }, ...g.items.map((s) =>
+      el("option", { value: s.id }, musicLogic.styleOption(s, s.id === p.style))))));
+  $("so-style").value = song.style;
 }
 
 // soAlso draws the secondary type list without the primary type, and drops
@@ -244,7 +124,7 @@ function soDescribe(res) {
   const s = byId(lib.structures, song.structure);
   about($("so-structure-about"), s ? [["Sections", s.sections.join(" → ")]] : []);
   const st = byId(lib.styles, song.style);
-  about($("so-style-about"), st ? [st.best_for, ["Tempo", `${st.tempo} BPM`]] : []);
+  about($("so-style-about"), st ? [st.best_for, ["Tempo", musicLogic.tempoWords(st)], ["Group", st.group.name]] : []);
 }
 
 // writeSong asks musicSong for the song as `music song new` would make it,
@@ -297,9 +177,12 @@ function checkSong() {
 function initSong() {
   fill($("so-profile"), lib.profiles.map((item) => ({ item, mark: "" })), lib.defaultProfile);
   fill($("so-type"), [{ item: { id: "", name: "No song type" }, mark: "" }].concat(lib.types.map((item) => ({ item, mark: "" }))), "");
+  fill($("so-band"), [{ item: { id: "", name: "Any tempo" }, mark: "" }]
+    .concat(lib.bands.map((b) => ({ item: { id: b.id, name: `${b.id}, ${b.note}` }, mark: "" }))), "");
   song = musicLogic.restore(store.get("music.song"), lib);
   $("so-profile").value = song.profile;
   $("so-type").value = song.type;
+  $("so-band").value = song.band;
   soAlso();
   for (const f of SONG_FIELDS) document.querySelector(`[data-song="${f}"]`).value = song[f];
   $("so-lyric").value = store.get("music.songLyric") || "";
@@ -309,7 +192,7 @@ function initSong() {
     if (field === "type") soAlso();
     writeSong();
   };
-  for (const f of ["profile", "type", "also", "structure", "style"]) {
+  for (const f of ["profile", "type", "also", "structure", "style", "band"]) {
     $("so-" + f).addEventListener("change", (e) => set(f, e.target.value));
   }
   for (const f of SONG_FIELDS) {
@@ -520,13 +403,12 @@ function initCopy() {
 }
 
 window.musicReady = () => {
-  cat = JSON.parse(musicCatalog());
   lib = JSON.parse(musicLibrary());
-  $("version").textContent = cat.version;
+  $("version").textContent = lib.version;
+  try { localStorage.removeItem("music.generate"); } catch { /* storage is optional */ }
   $("loading").hidden = true;
   initTabs();
   initCopy();
-  initGenerate();
   initSong();
   initReview();
   showTab(TABS.includes(store.get("music.tab")) ? store.get("music.tab") : "song");

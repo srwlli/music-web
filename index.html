@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Music Prompt Writer</title>
-<meta name="description" content="Write a song from a profile, a song type, a structure and a style: a brief for your agent, the Suno style and lyrics template, and the terminal command. Build a Classic prompt, and review lyrics line by line. Runs in your browser; nothing is sent anywhere.">
+<meta name="description" content="Write a song from a profile, a song type, a structure and a style: a brief for your agent, the Suno style and lyrics template, and the terminal command. Review lyrics line by line. Runs in your browser; nothing is sent anywhere.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23b4532a'/%3E%3Cpath d='M12 22.5a3.5 3.5 0 1 1-2-3.16V8l12-2.5v13a3.5 3.5 0 1 1-2-3.16V10.1l-8 1.66z' fill='%23fff'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="style.css">
 </head>
@@ -20,7 +20,6 @@
     </div>
     <nav class="tabs" role="tablist">
       <button role="tab" id="tab-song" aria-controls="panel-song" aria-selected="true" tabindex="0">Write a song</button>
-      <button role="tab" id="tab-generate" aria-controls="panel-generate" aria-selected="false" tabindex="-1">Classic prompt</button>
       <button role="tab" id="tab-review" aria-controls="panel-review" aria-selected="false" tabindex="-1">Review lyrics</button>
     </nav>
   </div>
@@ -58,11 +57,16 @@
         </div>
 
         <div class="card step">
-          <label for="so-style"><span class="num">4</span> Style <span class="hint">the sound; ★ is the profile's own</span></label>
+          <label for="so-style"><span class="num">4</span> Style <span class="hint">the sound; this profile's come first and ★ is its own</span></label>
           <select id="so-style"></select>
           <p class="reason" id="so-style-reason" role="status"></p>
           <button id="so-style-back" class="ghost" type="button" hidden>Use the suggestion</button>
           <p class="about" id="so-style-about"></p>
+          <div class="fields">
+            <label class="wide">Tempo band <span class="hint">narrows the list; the style in use stays in it</span>
+              <select id="so-band"></select>
+            </label>
+          </div>
         </div>
 
         <div class="card step">
@@ -123,74 +127,6 @@
             </div>
             <pre id="so-sheet" class="box tall"></pre>
           </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section id="panel-generate" role="tabpanel" aria-labelledby="tab-generate" hidden>
-    <p class="small lead">The original prompt builder. Its song types are the catalog's own list of eight, not the thirteen Write a song uses.</p>
-    <div class="grid">
-      <div class="col">
-        <div class="card step">
-          <label for="type"><span class="num">1</span> Song type <span class="hint">what the song is for</span></label>
-          <select id="type"></select>
-          <p class="about" id="type-about"></p>
-        </div>
-
-        <div class="card step">
-          <label for="structure"><span class="num">2</span> Structure <span class="hint">the order of sections</span></label>
-          <select id="structure"></select>
-          <p class="about" id="structure-about"></p>
-          <label class="check" id="any-row" hidden><input type="checkbox" id="any"> Use it even though this song type doesn't recommend it</label>
-        </div>
-
-        <div class="card step">
-          <label for="style"><span class="num">3</span> Style <span class="hint">the sound</span></label>
-          <select id="style"></select>
-          <p class="about" id="style-about"></p>
-        </div>
-
-        <div class="card step">
-          <label for="title"><span class="num">4</span> Title <span class="hint">optional</span></label>
-          <input id="title" type="text" autocomplete="off" placeholder="Untitled">
-          <details id="details">
-            <summary>Change genre, mood, tempo…</summary>
-            <p class="small">Leave a field blank to keep the style's value, shown greyed out.</p>
-            <div class="fields">
-              <label>Genre <input data-field="genre" type="text" autocomplete="off"></label>
-              <label>Mood <input data-field="mood" type="text" autocomplete="off"></label>
-              <label>Tempo (BPM) <input data-field="tempo" type="text" inputmode="numeric" autocomplete="off"></label>
-              <label>Vocal style <input data-field="vocalStyle" type="text" autocomplete="off"></label>
-              <label class="wide">Instrumentation <input data-field="instrumentation" type="text" autocomplete="off"></label>
-            </div>
-          </details>
-        </div>
-        <p class="legend">★ recommended first choice · + also recommended</p>
-      </div>
-
-      <div class="col out">
-        <p id="gen-error" class="error" role="alert" hidden></p>
-        <div class="card">
-          <div class="out-head">
-            <h2>Style <span class="hint">paste into Suno's style field</span></h2>
-            <button class="copy" data-copy="out-style">Copy</button>
-          </div>
-          <pre id="out-style" class="box"></pre>
-        </div>
-        <div class="card">
-          <div class="out-head">
-            <h2>Lyrics <span class="hint">paste into Suno's lyrics field, then write under each tag</span></h2>
-            <button class="copy" data-copy="out-lyrics">Copy</button>
-          </div>
-          <pre id="out-lyrics" class="box tall"></pre>
-        </div>
-        <div class="card">
-          <div class="out-head">
-            <h2>Full prompt <span class="hint">the whole prompt, for whoever writes the lyrics</span></h2>
-            <button class="copy" data-copy="out-prompt">Copy</button>
-          </div>
-          <pre id="out-prompt" class="box"></pre>
         </div>
       </div>
     </div>
