@@ -242,6 +242,21 @@ const musicLogic = {
   panels(saved) {
     return saved === "solid" ? "solid" : "glass";
   },
+
+  // sunoLyric is what the page offers for Suno's Lyrics box: the pasted or
+  // written lyric, trimmed, once the check found every section, and nothing
+  // otherwise. Suno sings whatever is in that box (DISPATCH-2026-11-08-MUSIC-019),
+  // so the brief is never offered there: a paste holding the brief's first
+  // line is the brief, whatever its sections, and gets a note instead.
+  sunoLyric(lyric, res, brief) {
+    const text = String(lyric || "").trim();
+    if (!text || !res || res.error || res.fatal || !Array.isArray(res.missing)) return { text: "", note: "" };
+    const head = String(brief || "").split("\n")[0].trim();
+    if (head && text.includes(head)) {
+      return { text: "", note: "That is the brief, not a lyric. Give the brief to Claude, ChatGPT or another AI, and paste back the lyric it writes." };
+    }
+    return { text: res.missing.length ? "" : text, note: "" };
+  },
 };
 
 globalThis.musicLogic = musicLogic;

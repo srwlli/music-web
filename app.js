@@ -78,12 +78,13 @@ function recovery(message) {
     el("p", {}, "In a terminal, ", el("code", {}, "music song new"), " makes the same song."));
 }
 
-// output is one result with its Copy button.
-function output(id, title, hint, text, tall) {
+// output is one result with its Copy button. Its title says where it goes
+// (DISPATCH-2026-11-08-MUSIC-019); what names the text for the Copy button.
+function output(id, title, hint, text, tall, what) {
   return el("div", { class: "card result" },
     el("div", { class: "out-head" },
       el("h3", {}, title, hint ? el("span", { class: "hint" }, hint) : null),
-      el("button", { class: "copy", type: "button", "data-copy": id, "aria-label": `Copy the ${title.toLowerCase()}` }, "Copy")),
+      el("button", { class: "copy", type: "button", "data-copy": id, "aria-label": `Copy ${what || title}` }, "Copy")),
     el("pre", { id, class: "box" + (tall ? " tall" : "") }, text || ""));
 }
 
@@ -96,18 +97,24 @@ function checkLyric(node) {
   if (res.fatal) { node.replaceChildren(recovery(res.error)); return; }
   if (res.error) { node.replaceChildren(el("p", { class: "small check-miss", role: "status" }, res.error)); return; }
   const name = flow.structure().name;
+  const o = flow.outputs();
+  const suno = musicLogic.sunoLyric(lyric, res, o && o.brief);
+  if (suno.note) { node.replaceChildren(el("p", { class: "small check-miss", role: "status" }, suno.note)); return; }
   const status = res.missing.length
     ? el("p", { class: "small check-miss", role: "status" },
-      `Missing ${res.missing.map((s) => `[${s}]`).join(", ")} for ${name}. Ask your agent for them, or write them in.`)
+      `Missing ${res.missing.map((s) => `[${s}]`).join(", ")} for ${name}. Ask your AI for them, or write them in. Suno's Lyrics box waits until every section is there.`)
     : el("p", { class: "small check-ok", role: "status" }, `✓ Every section of ${name} is there.`);
+  const lyricBox = suno.text
+    ? output("out-suno-lyric", "Suno: Lyrics box", "paste the finished lyric here, in Custom mode", suno.text, true, "the finished lyric, for Suno's Lyrics box")
+    : null;
   const sheet = el("div", { class: "card result" },
     el("div", { class: "out-head" },
-      el("h3", {}, "Song sheet", el("span", { class: "hint" }, "the lyric under its style, as music song check writes it")),
+      el("h3", {}, "Song sheet, not for Suno", el("span", { class: "hint" }, "the style and the lyric together, as music song check writes it, to keep or to review")),
       el("div", { class: "row tight" },
         el("button", { class: "copy", type: "button", "data-copy": "out-sheet", "aria-label": "Copy the song sheet" }, "Copy"),
         el("button", { class: "ghost", type: "button", onclick: () => sendToReview(res.sheet) }, "Review these lyrics"))),
     el("pre", { id: "out-sheet", class: "box tall" }, res.sheet));
-  node.replaceChildren(status, sheet);
+  node.replaceChildren(status, lyricBox || "", sheet);
 }
 
 // sendToReview opens the lyric in Review lyrics. A review with a keep or a
@@ -140,7 +147,7 @@ function drawEnd(node, api) {
 
   if (!flow.written()) {
     node.append(
-      el("p", { class: "small" }, "That is every question. Change any answer above, or write the prompts now."),
+      el("p", { class: "small" }, "That is every question. Change any answer above, or write the outputs now."),
       el("div", { class: "row" }, el("button", {
         class: "primary", type: "button",
         onclick: () => {
@@ -149,7 +156,7 @@ function drawEnd(node, api) {
           const h = $("out-title") || document.querySelector(".end .error");
           if (h) h.focus();
         },
-      }, "Write the prompts")));
+      }, "Write the outputs")));
     return;
   }
 
@@ -165,19 +172,19 @@ function drawEnd(node, api) {
   area.value = flow.lyric();
   area.addEventListener("input", () => { flow.setLyric(area.value); checkLyric(checked); });
   node.append(
-    el("h2", { id: "out-title", tabindex: "-1", class: "out-title" }, "The prompts"),
-    el("p", { class: "small" }, "Give the brief to your agent to write the lyric. The style and the template go into Suno."),
-    output("out-brief", "Brief", "for your agent to write the lyric", o.brief, true),
-    output("out-style", "Style", "for Suno's style field", o.styleText),
-    output("out-template", "Lyrics template", "the structure's sections, for Suno's lyrics field", o.template),
+    el("h2", { id: "out-title", tabindex: "-1", class: "out-title" }, "What goes where"),
+    el("p", { class: "small" }, "Each box says where it goes. The brief is for Claude, ChatGPT or another AI to write the lyric from, never for Suno, which would sing it. The style goes in Suno's Style box. Paste the lyric your AI writes back below, and once every section is there it is given for Suno's Lyrics box."),
+    output("out-brief", "For Claude, ChatGPT or another AI", "ask it to write the lyrics from this. Never paste it into Suno", o.brief, true, "the brief, for Claude, ChatGPT or another AI"),
+    output("out-style", "Suno: Style box", "paste this into Suno's Style box, in Custom mode", o.styleText, false, "the style, for Suno's Style box"),
+    output("out-template", "Sections, not for Suno", "the structure's section markers in order, for your AI or for you to write under", o.template, false, "the sections"),
     el("details", { class: "more advanced" },
       el("summary", {}, "Advanced: the terminal command"),
       el("p", { class: "small" }, "Makes this song in a folder under songs/, to finish in a terminal."),
       output("out-command", "Terminal command", "", musicLogic.commandText(o.command))),
     helperState.hello ? drawHelper(el("div", { id: "helper-card", class: "card result helper" })) : null,
     el("div", { class: "card result" },
-      el("h3", {}, el("label", { for: lyricId }, "Paste the lyric back")),
-      el("p", { class: "small" }, "It is checked here against the structure's sections, as ", el("code", {}, "music song check"), " checks it. Nothing is sent anywhere."),
+      el("h3", {}, el("label", { for: lyricId }, "Paste the finished lyric back")),
+      el("p", { class: "small" }, "The lyric your AI wrote, not the brief. It is checked here against the structure's sections, as ", el("code", {}, "music song check"), " checks it, and then given for Suno's Lyrics box. Nothing is sent anywhere."),
       area),
     checked);
   checkLyric(checked);
@@ -216,7 +223,7 @@ function drawHelper(node) {
   if (res && res.output && !st.ok && st.done) {
     parts.push(el("details", { class: "more" }, el("summary", {}, "What the agent said"), el("pre", { class: "box" }, res.output)));
   }
-  if (res && res.style && st.done) parts.push(output("out-helper-style", "Style", `${res.folder}/style.txt, for Suno's style field`, res.style));
+  if (res && res.style && st.done) parts.push(output("out-helper-style", "Suno: Style box", `${res.folder}/style.txt, paste it into Suno's Style box`, res.style, false, "the style, for Suno's Style box"));
   node.replaceChildren(...parts);
   return node;
 }

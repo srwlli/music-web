@@ -3,19 +3,24 @@
    reads them through var() and holds no value of its own. ui-tokens.json maps
    the shared roles to these names and lists this file as the definitions.
 
-   The palette mirrors Suno's own app, read from suno.com and its stylesheet on
-   2026-11-07: near-black greys with warm off-white text, and its pink as the
-   one brand colour. Colour values only: no name, logo, icon, imagery or font of
-   Suno's is used. The page is dark first, as Suno's app is. Light follows the
-   system unless the page's theme switch says otherwise (html data-theme).
+   The greys and the warm off-white text were read from suno.com's stylesheet
+   on 2026-11-07, colour values only: no name, logo, icon, imagery or font of
+   Suno's is used. The page is dark first. Light follows the system unless the
+   page's theme switch says otherwise (html data-theme).
+
+   The one accent is amber, hue about 33 degrees: #f2a03d with black text in
+   dark, #a85200 with white text in light (DISPATCH-2026-11-08-MUSIC-019). The
+   Operator wants no purple or pink, so no colour here, in either theme or
+   panel mode, has a hue from 260 to 345 degrees, and cmd/musicweb's
+   TestNoPurpleOrPink fails if one comes back. The scene's third light is teal,
+   not blue, because blue under orange and amber blends towards purple.
 
    Every text pairing below was checked at WCAG AA (4.5:1) against the worst
    point of the scene, bare and under each glass fill, in both themes, and the
-   focus ring and field borders at 3:1 (WO-01M6VZ3XSQKSYS9GHXAQ52KCJ6 P1.T5).
-   Three values are not Suno's own but a step from them, for that check: the
-   light pink text (#981e59, Suno's darker strawberry), the light error
-   (#b02505, darker than its #c32906) and the dark info blue (#5aa9ff, lighter
-   than its #1f8bff). */
+   focus ring and field borders at 3:1 (WO-01M6WGQP5N538KPBNXQSHT826G P1.T2).
+   Two values were moved a step for that check: the light placeholder (#63636a,
+   was #6a6a72) and the dark info blue (#5aa9ff, lighter than Suno's #1f8bff);
+   the light error (#b02505) is darker than Suno's #c32906. */
 
 :root {
   /* colour: dark, the default */
@@ -26,13 +31,13 @@
   --muted: #252529;
   --muted-foreground: #c2c2c1;
   --placeholder: #a3a3a3;
-  --primary: #fd429c;
+  --primary: #f2a03d;
   --primary-foreground: #000000;
   --secondary: #2e2e33;
   --secondary-foreground: #f7f4ef;
-  --accent: #33172a;
+  --accent: #2e2414;
   --accent-foreground: #f7f4ef;
-  --accent-text: #ff78b9;
+  --accent-text: #f7b860;
   --destructive: #fa7658;
   --destructive-foreground: #000000;
   --destructive-soft: #3a1a14;
@@ -48,7 +53,7 @@
      docs/design/song-builder-mock/glass.css, with this palette */
   --glass-fill: rgb(28 28 31 / .62);
   --glass-strong: rgb(16 16 18 / .78);
-  --glass-tint: rgb(51 23 42 / .74);
+  --glass-tint: rgb(46 36 20 / .74);
   --glass-box: rgb(8 8 10 / .55);
   --glass-soft: rgb(255 255 255 / .04);
   --glass-edge: rgb(255 255 255 / .12);
@@ -57,9 +62,9 @@
   --glass-blur-soft: blur(10px);
   --glass-halo: rgb(0 0 0 / .75);
   --scene:
-    radial-gradient(40rem 30rem at 8% 2%, rgb(253 66 156 / .16), transparent 70%),
+    radial-gradient(40rem 30rem at 8% 2%, rgb(242 160 61 / .14), transparent 70%),
     radial-gradient(36rem 30rem at 96% 30%, rgb(248 68 27 / .12), transparent 70%),
-    radial-gradient(42rem 32rem at 30% 98%, rgb(31 139 255 / .10), transparent 70%);
+    radial-gradient(42rem 32rem at 30% 98%, rgb(14 138 130 / .08), transparent 70%);
 
   /* radius */
   --radius-sm: 6px;
@@ -124,14 +129,14 @@
     --surface-foreground: #101012;
     --muted: #edeae4;
     --muted-foreground: #5b5b62;
-    --placeholder: #6a6a72;
-    --primary: #de1677;
+    --placeholder: #63636a;
+    --primary: #a85200;
     --primary-foreground: #ffffff;
     --secondary: #e0deda;
     --secondary-foreground: #101012;
-    --accent: #f9e3ee;
+    --accent: #fbeedd;
     --accent-foreground: #101012;
-    --accent-text: #981e59;
+    --accent-text: #8a4500;
     --destructive: #b02505;
     --destructive-foreground: #ffffff;
     --destructive-soft: #fbe3dc;
@@ -144,16 +149,16 @@
     --ring: #101012;
     --glass-fill: rgb(252 251 249 / .66);
     --glass-strong: rgb(252 251 249 / .80);
-    --glass-tint: rgb(249 227 238 / .80);
+    --glass-tint: rgb(251 238 221 / .80);
     --glass-box: rgb(255 255 255 / .78);
     --glass-soft: rgb(255 255 255 / .45);
     --glass-edge: rgb(255 255 255 / .80);
     --glass-hi: inset 0 1px 0 rgb(255 255 255 / .75);
     --glass-halo: rgb(255 255 255 / .9);
     --scene:
-      radial-gradient(40rem 30rem at 8% 2%, rgb(253 66 156 / .10), transparent 70%),
-      radial-gradient(36rem 30rem at 96% 30%, rgb(250 118 88 / .08), transparent 70%),
-      radial-gradient(42rem 32rem at 30% 98%, rgb(31 139 255 / .06), transparent 70%);
+      radial-gradient(40rem 30rem at 8% 2%, rgb(242 160 61 / .08), transparent 70%),
+      radial-gradient(36rem 30rem at 96% 30%, rgb(250 118 88 / .06), transparent 70%),
+      radial-gradient(42rem 32rem at 30% 98%, rgb(14 138 130 / .04), transparent 70%);
     --shadow-sm: 0 1px 2px rgb(16 16 18 / .10);
     --shadow-md: 0 12px 32px -16px rgb(16 16 18 / .28);
     --shadow-lg: 0 24px 60px -20px rgb(16 16 18 / .35);
@@ -168,14 +173,14 @@
   --surface-foreground: #101012;
   --muted: #edeae4;
   --muted-foreground: #5b5b62;
-  --placeholder: #6a6a72;
-  --primary: #de1677;
+  --placeholder: #63636a;
+  --primary: #a85200;
   --primary-foreground: #ffffff;
   --secondary: #e0deda;
   --secondary-foreground: #101012;
-  --accent: #f9e3ee;
+  --accent: #fbeedd;
   --accent-foreground: #101012;
-  --accent-text: #981e59;
+  --accent-text: #8a4500;
   --destructive: #b02505;
   --destructive-foreground: #ffffff;
   --destructive-soft: #fbe3dc;
@@ -188,16 +193,16 @@
   --ring: #101012;
   --glass-fill: rgb(252 251 249 / .66);
   --glass-strong: rgb(252 251 249 / .80);
-  --glass-tint: rgb(249 227 238 / .80);
+  --glass-tint: rgb(251 238 221 / .80);
   --glass-box: rgb(255 255 255 / .78);
   --glass-soft: rgb(255 255 255 / .45);
   --glass-edge: rgb(255 255 255 / .80);
   --glass-hi: inset 0 1px 0 rgb(255 255 255 / .75);
   --glass-halo: rgb(255 255 255 / .9);
   --scene:
-    radial-gradient(40rem 30rem at 8% 2%, rgb(253 66 156 / .10), transparent 70%),
-    radial-gradient(36rem 30rem at 96% 30%, rgb(250 118 88 / .08), transparent 70%),
-    radial-gradient(42rem 32rem at 30% 98%, rgb(31 139 255 / .06), transparent 70%);
+    radial-gradient(40rem 30rem at 8% 2%, rgb(242 160 61 / .08), transparent 70%),
+    radial-gradient(36rem 30rem at 96% 30%, rgb(250 118 88 / .06), transparent 70%),
+    radial-gradient(42rem 32rem at 30% 98%, rgb(14 138 130 / .04), transparent 70%);
   --shadow-sm: 0 1px 2px rgb(16 16 18 / .10);
   --shadow-md: 0 12px 32px -16px rgb(16 16 18 / .28);
   --shadow-lg: 0 24px 60px -20px rgb(16 16 18 / .35);
