@@ -1,0 +1,235 @@
+/* tokens.css: every colour, radius, shadow, spacing, type and motion value the
+   page uses, defined once at the root (docs/ui/RULES.md U2, U6). style.css
+   reads them through var() and holds no value of its own. ui-tokens.json maps
+   the shared roles to these names and lists this file as the definitions.
+
+   The palette mirrors Suno's own app, read from suno.com and its stylesheet on
+   2026-11-07: near-black greys with warm off-white text, and its pink as the
+   one brand colour. Colour values only: no name, logo, icon, imagery or font of
+   Suno's is used. The page is dark first, as Suno's app is. Light follows the
+   system unless the page's theme switch says otherwise (html data-theme).
+
+   Every text pairing below was checked at WCAG AA (4.5:1) against the worst
+   point of the scene, bare and under each glass fill, in both themes, and the
+   focus ring and field borders at 3:1 (WO-01M6VZ3XSQKSYS9GHXAQ52KCJ6 P1.T5).
+   Three values are not Suno's own but a step from them, for that check: the
+   light pink text (#981e59, Suno's darker strawberry), the light error
+   (#b02505, darker than its #c32906) and the dark info blue (#5aa9ff, lighter
+   than its #1f8bff). */
+
+:root {
+  /* colour: dark, the default */
+  --background: #101012;
+  --foreground: #f7f4ef;
+  --surface: #1c1c1f;
+  --surface-foreground: #f7f4ef;
+  --muted: #252529;
+  --muted-foreground: #c2c2c1;
+  --placeholder: #a3a3a3;
+  --primary: #fd429c;
+  --primary-foreground: #000000;
+  --secondary: #2e2e33;
+  --secondary-foreground: #f7f4ef;
+  --accent: #33172a;
+  --accent-foreground: #f7f4ef;
+  --accent-text: #ff78b9;
+  --destructive: #fa7658;
+  --destructive-foreground: #000000;
+  --destructive-soft: #3a1a14;
+  --success: #5bd205;
+  --success-soft: #1a2e10;
+  --warning: #f5d907;
+  --info: #5aa9ff;
+  --border: rgb(255 255 255 / .12);
+  --input: #7d7c83;
+  --ring: #f7f4ef;
+
+  /* glass: the panels' translucent fills over the scene, after the mock in
+     docs/design/song-builder-mock/glass.css, with this palette */
+  --glass-fill: rgb(28 28 31 / .62);
+  --glass-strong: rgb(16 16 18 / .78);
+  --glass-tint: rgb(51 23 42 / .74);
+  --glass-box: rgb(8 8 10 / .55);
+  --glass-soft: rgb(255 255 255 / .04);
+  --glass-edge: rgb(255 255 255 / .12);
+  --glass-hi: inset 0 1px 0 rgb(255 255 255 / .07);
+  --glass-blur: blur(18px) saturate(150%);
+  --glass-blur-soft: blur(10px);
+  --glass-halo: rgb(0 0 0 / .75);
+  --scene:
+    radial-gradient(40rem 30rem at 8% 2%, rgb(253 66 156 / .16), transparent 70%),
+    radial-gradient(36rem 30rem at 96% 30%, rgb(248 68 27 / .12), transparent 70%),
+    radial-gradient(42rem 32rem at 30% 98%, rgb(31 139 255 / .10), transparent 70%);
+
+  /* radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 18px;
+  --radius-full: 999px;
+
+  /* shadow */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / .4);
+  --shadow-md: 0 14px 34px -16px rgb(0 0 0 / .75);
+  --shadow-lg: 0 24px 60px -20px rgb(0 0 0 / .85);
+  --shadow-inset: inset 0 1px 2px rgb(0 0 0 / .25);
+
+  /* spacing: one scale, 4px steps to 16 and then wider */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --gutter: 16px;
+  --width-page: 1180px;
+  --width-chat: 760px;
+  --tap: 44px;
+
+  /* typography: the system's own sans and mono (U9) */
+  --font-display: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --size-label: .75rem;
+  --size-body-sm: .875rem;
+  --size-body: 1rem;
+  --size-body-lg: 1.125rem;
+  --size-heading: 1.5rem;
+  --size-display: 1.75rem;
+  --weight-regular: 400;
+  --weight-medium: 600;
+  --weight-bold: 700;
+  --leading-tight: 1.25;
+  --leading-body: 1.5;
+  --tracking-wide: .06em;
+  --tracking-tight: -.01em;
+
+  /* motion (U10): durations and curves; reduced motion zeroes them below */
+  --duration-micro: 150ms;
+  --duration-short: 300ms;
+  --duration-medium: 500ms;
+  --duration-long: 800ms;
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+  --ease-in-out: cubic-bezier(.65, 0, .35, 1);
+  --ease-in: cubic-bezier(.5, 0, .75, 0);
+
+  color-scheme: dark;
+}
+
+/* colour: light, by the system's wish or the page's switch */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --background: #f7f4ef;
+    --foreground: #101012;
+    --surface: #fcfbf9;
+    --surface-foreground: #101012;
+    --muted: #edeae4;
+    --muted-foreground: #5b5b62;
+    --placeholder: #6a6a72;
+    --primary: #de1677;
+    --primary-foreground: #ffffff;
+    --secondary: #e0deda;
+    --secondary-foreground: #101012;
+    --accent: #f9e3ee;
+    --accent-foreground: #101012;
+    --accent-text: #981e59;
+    --destructive: #b02505;
+    --destructive-foreground: #ffffff;
+    --destructive-soft: #fbe3dc;
+    --success: #017431;
+    --success-soft: #def3e4;
+    --warning: #725f03;
+    --info: #005cbe;
+    --border: rgb(16 16 18 / .12);
+    --input: #6a6a72;
+    --ring: #101012;
+    --glass-fill: rgb(252 251 249 / .66);
+    --glass-strong: rgb(252 251 249 / .80);
+    --glass-tint: rgb(249 227 238 / .80);
+    --glass-box: rgb(255 255 255 / .78);
+    --glass-soft: rgb(255 255 255 / .45);
+    --glass-edge: rgb(255 255 255 / .80);
+    --glass-hi: inset 0 1px 0 rgb(255 255 255 / .75);
+    --glass-halo: rgb(255 255 255 / .9);
+    --scene:
+      radial-gradient(40rem 30rem at 8% 2%, rgb(253 66 156 / .10), transparent 70%),
+      radial-gradient(36rem 30rem at 96% 30%, rgb(250 118 88 / .08), transparent 70%),
+      radial-gradient(42rem 32rem at 30% 98%, rgb(31 139 255 / .06), transparent 70%);
+    --shadow-sm: 0 1px 2px rgb(16 16 18 / .10);
+    --shadow-md: 0 12px 32px -16px rgb(16 16 18 / .28);
+    --shadow-lg: 0 24px 60px -20px rgb(16 16 18 / .35);
+    --shadow-inset: inset 0 1px 2px rgb(16 16 18 / .06);
+    color-scheme: light;
+  }
+}
+:root[data-theme="light"] {
+  --background: #f7f4ef;
+  --foreground: #101012;
+  --surface: #fcfbf9;
+  --surface-foreground: #101012;
+  --muted: #edeae4;
+  --muted-foreground: #5b5b62;
+  --placeholder: #6a6a72;
+  --primary: #de1677;
+  --primary-foreground: #ffffff;
+  --secondary: #e0deda;
+  --secondary-foreground: #101012;
+  --accent: #f9e3ee;
+  --accent-foreground: #101012;
+  --accent-text: #981e59;
+  --destructive: #b02505;
+  --destructive-foreground: #ffffff;
+  --destructive-soft: #fbe3dc;
+  --success: #017431;
+  --success-soft: #def3e4;
+  --warning: #725f03;
+  --info: #005cbe;
+  --border: rgb(16 16 18 / .12);
+  --input: #6a6a72;
+  --ring: #101012;
+  --glass-fill: rgb(252 251 249 / .66);
+  --glass-strong: rgb(252 251 249 / .80);
+  --glass-tint: rgb(249 227 238 / .80);
+  --glass-box: rgb(255 255 255 / .78);
+  --glass-soft: rgb(255 255 255 / .45);
+  --glass-edge: rgb(255 255 255 / .80);
+  --glass-hi: inset 0 1px 0 rgb(255 255 255 / .75);
+  --glass-halo: rgb(255 255 255 / .9);
+  --scene:
+    radial-gradient(40rem 30rem at 8% 2%, rgb(253 66 156 / .10), transparent 70%),
+    radial-gradient(36rem 30rem at 96% 30%, rgb(250 118 88 / .08), transparent 70%),
+    radial-gradient(42rem 32rem at 30% 98%, rgb(31 139 255 / .06), transparent 70%);
+  --shadow-sm: 0 1px 2px rgb(16 16 18 / .10);
+  --shadow-md: 0 12px 32px -16px rgb(16 16 18 / .28);
+  --shadow-lg: 0 24px 60px -20px rgb(16 16 18 / .35);
+  --shadow-inset: inset 0 1px 2px rgb(16 16 18 / .06);
+  color-scheme: light;
+}
+
+/* The solid fallback: opaque panels, no blur, over the same background, where
+   backdrop-filter is missing, where the viewer asks for reduced transparency,
+   or under the page's Solid switch (html data-glass="solid"). These come after
+   the themes and match at the same weight (:root:root), so they win in either
+   theme, and the fills they name are the active theme's. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root:root {
+    --glass-fill: var(--surface); --glass-strong: var(--surface); --glass-tint: var(--accent);
+    --glass-box: var(--background); --glass-soft: var(--surface); --glass-blur: none; --glass-blur-soft: none;
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  :root:root {
+    --glass-fill: var(--surface); --glass-strong: var(--surface); --glass-tint: var(--accent);
+    --glass-box: var(--background); --glass-soft: var(--surface); --glass-blur: none; --glass-blur-soft: none;
+  }
+}
+:root[data-glass="solid"] {
+  --glass-fill: var(--surface); --glass-strong: var(--surface); --glass-tint: var(--accent);
+  --glass-box: var(--background); --glass-soft: var(--surface); --glass-blur: none; --glass-blur-soft: none;
+}
+
+/* Reduced motion (U10): nothing moves; a state change is immediate. */
+@media (prefers-reduced-motion: reduce) {
+  :root:root {
+    --duration-micro: 0ms; --duration-short: 0ms; --duration-medium: 0ms; --duration-long: 0ms;
+  }
+}

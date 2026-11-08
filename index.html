@@ -4,8 +4,18 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Music Prompt Writer</title>
-<meta name="description" content="Write a song from a profile, a song type, a structure and a style: a brief for your agent, the Suno style and lyrics template, and the terminal command. Review lyrics line by line. Runs in your browser; nothing is sent anywhere.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23b4532a'/%3E%3Cpath d='M12 22.5a3.5 3.5 0 1 1-2-3.16V8l12-2.5v13a3.5 3.5 0 1 1-2-3.16V10.1l-8 1.66z' fill='%23fff'/%3E%3C/svg%3E">
+<meta name="description" content="Write a song one question at a time: a song type, a sound, a feeling, a story, a hook, a structure. You get a brief for your agent, the Suno style and lyrics template, and the terminal command. Review lyrics line by line. Runs in your browser; nothing is sent anywhere.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23fd429c'/%3E%3Cpath d='M12 22.5a3.5 3.5 0 1 1-2-3.16V8l12-2.5v13a3.5 3.5 0 1 1-2-3.16V10.1l-8 1.66z' fill='%23000'/%3E%3C/svg%3E">
+<script>
+// The theme and panels the viewer chose, set before the page draws.
+(function () {
+  var t = null, g = null;
+  try { t = JSON.parse(localStorage.getItem("music.theme")); g = JSON.parse(localStorage.getItem("music.glass")); } catch (e) { /* storage is optional */ }
+  if (t === "dark" || t === "light") document.documentElement.setAttribute("data-theme", t);
+  if (g === "solid") document.documentElement.setAttribute("data-glass", "solid");
+})();
+</script>
+<link rel="stylesheet" href="tokens.css">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -29,106 +39,20 @@
   <p id="loading" class="notice">Loading…</p>
 
   <section id="panel-song" role="tabpanel" aria-labelledby="tab-song" hidden>
-    <div class="grid">
-      <div class="col">
-        <div class="card step">
-          <label for="so-profile"><span class="num">1</span> Profile <span class="hint">how the lyric is written</span></label>
-          <select id="so-profile"></select>
-          <p class="about" id="so-profile-about"></p>
-        </div>
-
-        <div class="card step">
-          <label for="so-type"><span class="num">2</span> Song type <span class="hint">what the song is about</span></label>
-          <select id="so-type"></select>
-          <p class="about" id="so-type-about"></p>
-          <div class="fields">
-            <label class="wide">Secondary type <span class="hint">optional, a lesser influence</span>
-              <select id="so-also"></select>
-            </label>
-          </div>
-        </div>
-
-        <div class="card step">
-          <label for="so-structure"><span class="num">3</span> Structure <span class="hint">the sections, grouped by length</span></label>
-          <select id="so-structure"></select>
-          <p class="reason" id="so-structure-reason" role="status"></p>
-          <button id="so-structure-back" class="ghost" type="button" hidden>Use the suggestion</button>
-          <p class="about" id="so-structure-about"></p>
-        </div>
-
-        <div class="card step">
-          <label for="so-style"><span class="num">4</span> Style <span class="hint">the sound; this profile's come first and ★ is its own</span></label>
-          <select id="so-style"></select>
-          <p class="reason" id="so-style-reason" role="status"></p>
-          <button id="so-style-back" class="ghost" type="button" hidden>Use the suggestion</button>
-          <p class="about" id="so-style-about"></p>
-          <div class="fields">
-            <label class="wide">Tempo band <span class="hint">narrows the list; the style in use stays in it</span>
-              <select id="so-band"></select>
-            </label>
-          </div>
-        </div>
-
-        <div class="card step">
-          <label for="so-title"><span class="num">5</span> The song <span class="hint">all optional; a blank one is the writer's choice</span></label>
-          <div class="fields">
-            <label class="wide">Title <input id="so-title" data-song="title" type="text" autocomplete="off" placeholder="The writer chooses one"></label>
-            <label class="wide">Emotion pair <input data-song="emotion" type="text" autocomplete="off" placeholder="such as regret and resolve"></label>
-            <label class="wide">Scene <input data-song="scene" type="text" autocomplete="off" placeholder="one place and time the song happens in"></label>
-            <label class="wide">Arc <input data-song="arc" type="text" autocomplete="off" placeholder="such as a mistake, then the drive home, then a decision"></label>
-            <label class="wide">Hook concept <input data-song="hook" type="text" autocomplete="off" placeholder="in your own words"></label>
-            <label>Tempo (BPM) <input data-song="tempo" type="text" inputmode="numeric" autocomplete="off" placeholder="the style's own"></label>
-          </div>
+    <div class="chat">
+      <div class="chat-head">
+        <h2>Write a song <span class="hint">one question at a time; change any answer as you go</span></h2>
+        <button id="start-over" class="ghost" type="button" aria-expanded="false" aria-controls="confirm">Start over</button>
+      </div>
+      <div id="confirm" class="card confirm" role="group" aria-labelledby="confirm-text" hidden>
+        <p id="confirm-text">Clear every answer, the outputs and the pasted lyric, and start again? A lyric review stays.</p>
+        <div class="row tight">
+          <button id="confirm-clear" class="primary" type="button">Clear my answers</button>
+          <button id="confirm-keep" class="ghost" type="button">Keep going</button>
         </div>
       </div>
-
-      <div class="col out">
-        <p id="so-error" class="error" role="alert" hidden></p>
-        <div class="card">
-          <div class="out-head">
-            <h2>Brief <span class="hint">paste into an agent or ChatGPT to write the lyric</span></h2>
-            <button class="copy" data-copy="so-brief">Copy</button>
-          </div>
-          <pre id="so-brief" class="box tall"></pre>
-        </div>
-        <div class="card">
-          <div class="out-head">
-            <h2>Style <span class="hint">paste into Suno's style field</span></h2>
-            <button class="copy" data-copy="so-style-text">Copy</button>
-          </div>
-          <pre id="so-style-text" class="box"></pre>
-        </div>
-        <div class="card">
-          <div class="out-head">
-            <h2>Lyrics template <span class="hint">the structure's section markers, for Suno's lyrics field</span></h2>
-            <button class="copy" data-copy="so-template">Copy</button>
-          </div>
-          <pre id="so-template" class="box"></pre>
-        </div>
-        <div class="card">
-          <div class="out-head">
-            <h2>Terminal command <span class="hint">makes this song in a folder, to finish in a terminal</span></h2>
-            <button class="copy" data-copy="so-command">Copy</button>
-          </div>
-          <pre id="so-command" class="box"></pre>
-        </div>
-        <div class="card">
-          <h2><label for="so-lyric">Paste the lyric back</label></h2>
-          <p class="small">It is checked here against the structure's sections, as <code>music song check</code> checks it. Nothing is sent anywhere.</p>
-          <textarea id="so-lyric" rows="10" spellcheck="false" placeholder="[Intro]&#10;…"></textarea>
-          <p id="so-check" class="small" role="status"></p>
-          <div id="so-sheet-card" hidden>
-            <div class="out-head">
-              <h2>Song sheet <span class="hint">the lyric under its style, as <code>music song check</code> writes it</span></h2>
-              <div class="row tight">
-                <button class="copy" data-copy="so-sheet">Copy</button>
-                <button id="so-review" class="ghost">Review these lyrics</button>
-              </div>
-            </div>
-            <pre id="so-sheet" class="box tall"></pre>
-          </div>
-        </div>
-      </div>
+      <p id="migrated" class="card migrated" role="status" hidden>Your song from the earlier page is here, with every answer it had. Change any of them below.</p>
+      <div id="chat"></div>
     </div>
   </section>
 
@@ -190,11 +114,27 @@
 </main>
 
 <footer class="wrap foot">
-  <p>music <span id="version"></span>. Lyric review keeps its work in this browser only.</p>
+  <p>music <span id="version"></span>. Your answers and lyric review are kept in this browser only.</p>
+  <div class="look">
+    <div class="seg" role="group" aria-label="Theme">
+      <span class="seg-label" aria-hidden="true">Theme</span>
+      <button type="button" data-theme-set="system" aria-pressed="true">Auto</button>
+      <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+      <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+    </div>
+    <div class="seg" role="group" aria-label="Panels">
+      <span class="seg-label" aria-hidden="true">Panels</span>
+      <button type="button" data-glass-set="glass" aria-pressed="true">Glass</button>
+      <button type="button" data-glass-set="solid" aria-pressed="false">Solid</button>
+    </div>
+  </div>
 </footer>
 
 <script src="wasm_exec.js"></script>
 <script src="logic.js"></script>
+<script src="helper.js"></script>
+<script src="chat.js"></script>
+<script src="songflow.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

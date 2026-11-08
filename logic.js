@@ -182,6 +182,66 @@ const musicLogic = {
     for (const k of musicLogic.SONG_INPUTS) state[k] = typeof s[k] === "string" ? s[k] : "";
     return state;
   },
+
+  // ---- the conversation ----
+
+  // tempoRange is a style's tempo as [low, high]; a style with one tempo
+  // gives [n, n], and one with none gives null.
+  tempoRange(style) {
+    const m = /^(\d+)(?:-(\d+))?$/.exec((style && style.tempo) || "");
+    return m ? [Number(m[1]), Number(m[2] || m[1])] : null;
+  },
+
+  // hasRange reports whether a style has a tempo to choose: a range, not
+  // one number. Only then is the tempo asked.
+  hasRange(style) {
+    const r = musicLogic.tempoRange(style);
+    return !!r && r[0] !== r[1];
+  },
+
+  // tempoCheck is what is wrong with a typed tempo for a style, as one
+  // sentence, or "" when it is a whole number in the style's range.
+  tempoCheck(value, style) {
+    const r = musicLogic.tempoRange(style);
+    const v = String(value == null ? "" : value).trim();
+    if (!r) return "This style has no tempo to choose.";
+    if (!/^\d+$/.test(v)) return `Type one whole number, such as ${Math.round((r[0] + r[1]) / 2)}.`;
+    if (Number(v) < r[0] || Number(v) > r[1]) return `${v} is outside ${style.name}'s ${style.tempo} BPM.`;
+    return "";
+  },
+
+  // firstSentence is a text's first sentence, or the whole text.
+  firstSentence(text) {
+    const t = String(text || "").trim();
+    return (/^.*?[.!?](\s|$)/.exec(t) || [t])[0].trim();
+  },
+
+  // chatMeta is the conversation's memory as the page restores it: the
+  // questions answered and whether the outputs were written. A song saved
+  // with no conversation beside it is one the form-based page saved: every
+  // answer in it is taken as given, so it opens on the review, migrated. An
+  // id the flow no longer asks is dropped.
+  chatMeta(savedSong, savedChat, ids) {
+    if (savedChat && typeof savedChat === "object" && Array.isArray(savedChat.answered)) {
+      const answered = savedChat.answered.filter((id, i, a) => ids.includes(id) && a.indexOf(id) === i);
+      return { answered, written: !!savedChat.written && answered.length > 0, migrated: false };
+    }
+    if (savedSong && typeof savedSong === "object") return { answered: ids.slice(), written: false, migrated: true };
+    return { answered: [], written: false, migrated: false };
+  },
+
+  // THEMES are the page's theme choices; system follows the device.
+  THEMES: ["system", "dark", "light"],
+
+  // theme is a saved theme choice if it is one, else system.
+  theme(saved) {
+    return musicLogic.THEMES.includes(saved) ? saved : "system";
+  },
+
+  // panels is a saved panel choice, glass or solid; glass unless solid.
+  panels(saved) {
+    return saved === "solid" ? "solid" : "glass";
+  },
 };
 
 globalThis.musicLogic = musicLogic;

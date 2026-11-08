@@ -1,7 +1,9 @@
 # music
 
-A browser page that writes a song from a profile, a song type, a structure
-and a style, builds Classic Suno prompts, and reviews lyrics line by line:
+A browser page that writes a song in a conversation, one question at a time:
+a song type, a profile and a style, the emotion, scene, arc, hook and title,
+a structure and a tempo. It ends with the brief, the Suno style text and the
+lyrics template. It also reviews lyrics line by line:
 https://srwlli.github.io/music-web/
 
 This repository holds only the built page. `music.wasm` is the music tool's Go
