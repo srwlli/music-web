@@ -257,6 +257,38 @@ const musicLogic = {
     }
     return { text: res.missing.length ? "" : text, note: "" };
   },
+
+  // editRequest is the request musicCheck takes for a song opened in Edit a
+  // song (DISPATCH-2026-11-09-MUSIC-033): the song's own choices, as
+  // musicserve read them from its song.json, and the lyric in the box. So the
+  // page checks the lyric as `music song check` checks lyric.txt.
+  editRequest(song, lyric) {
+    return Object.assign({}, song || {}, { lyric: String(lyric || "") });
+  },
+
+  // savedForm is a lyric as song.Save writes it: Windows line ends made
+  // plain and one line end after the last line, so the page can say whether
+  // the box differs from the lyric on disk.
+  savedForm(lyric) {
+    const text = String(lyric || "").replace(/\r\n/g, "\n").replace(/[ \t\r\n]+$/, "");
+    return text ? text + "\n" : "";
+  },
+
+  // edited reports whether the box holds a lyric other than the one saved.
+  edited(saved, box) {
+    return musicLogic.savedForm(saved) !== musicLogic.savedForm(box);
+  },
+
+  // editCheck is what the editor says about the box, from musicCheck's
+  // answer: ok once the lyric has every section of the song's structure.
+  editCheck(lyric, res) {
+    if (!String(lyric || "").trim()) return { ok: false, text: "The box is empty." };
+    if (!res || res.error || res.fatal || !Array.isArray(res.missing)) {
+      return { ok: false, text: (res && (res.error || res.fatal)) || "The lyric could not be checked." };
+    }
+    if (res.missing.length) return { ok: false, text: `Missing: ${res.missing.join(", ")}.` };
+    return { ok: true, text: "Every section is there." };
+  },
 };
 
 globalThis.musicLogic = musicLogic;

@@ -6,6 +6,8 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
+// TABS are the tabs shown. Edit a song joins them only when musicserve
+// answers (initEdit), so the published page has the two it always had.
 const TABS = ["song", "review"];
 
 const store = {
@@ -153,6 +155,7 @@ function drawEnd(node, api) {
         onclick: () => {
           flow.setWritten(true);
           api.draw();
+          mineAutoKeep();
           const h = $("out-title") || document.querySelector(".end .error");
           if (h) h.focus();
         },
@@ -181,6 +184,7 @@ function drawEnd(node, api) {
       el("summary", {}, "Advanced: the terminal command"),
       el("p", { class: "small" }, "Makes this song in a folder under songs/, to finish in a terminal."),
       output("out-command", "Terminal command", "", musicLogic.commandText(o.command))),
+    mineWriteCard(),
     helperState.hello ? drawHelper(el("div", { id: "helper-card", class: "card result helper" })) : null,
     el("div", { class: "card result" },
       el("h3", {}, el("label", { for: lyricId }, "Paste the finished lyric back")),
@@ -271,6 +275,7 @@ async function initHelper() {
   const h = await musicHelper.hello(fetch.bind(globalThis), location);
   if (!h) return;
   helperState.hello = h;
+  initEdit();
   const res = await musicHelper.run(fetch.bind(globalThis));
   if (res.status === "running") {
     helperState.res = res;
@@ -301,6 +306,7 @@ function initSong() {
   $("confirm").addEventListener("keydown", (e) => { if (e.key === "Escape") guard(false); });
   $("confirm-clear").addEventListener("click", () => {
     flow.clear();
+    if (mine.api) { mine.api.setWriting(null); mine.writeSaid = ""; }
     $("confirm").hidden = true;
     $("start-over").setAttribute("aria-expanded", "false");
     $("migrated").hidden = true;
@@ -480,6 +486,574 @@ function initReview() {
   $("lyrics-in").addEventListener("input", () => saveReview());
 }
 
+// ---- edit a song ----
+
+// Edit a song (DISPATCH-2026-11-09-MUSIC-033) is musicserve's: it opens a
+// song folder's lyric.txt, checks the box as music song check does while the
+// Operator types, and saves through musicserve, which keeps the lyric it
+// replaces as lyric-prev-<n>.txt. Without musicserve its tab stays hidden.
+const edit = { song: null, timer: 0 };
+const fetchFn = (...a) => fetch(...a);
+
+// editShow shows what the box holds: the check, and whether it differs from
+// lyric.txt.
+function editShow() {
+  const box = $("edit-lyric").value;
+  const res = SongFlow.engine(globalThis).check(musicLogic.editRequest(edit.song.song, box));
+  if (res.fatal) { $("edit-song").hidden = true; $("edit-card").append(recovery(res.error)); return; }
+  const c = musicLogic.editCheck(box, res);
+  const name = edit.song.structure;
+  $("edit-check").className = "small " + (c.ok ? "check-ok" : "check-miss");
+  $("edit-check").textContent = c.ok ? `✓ Every section of ${name} is there.` : `${c.text}${res.missing && res.missing.length ? ` (${name})` : ""}`;
+  const changed = musicLogic.edited(edit.song.lyric, box);
+  $("edit-save").disabled = !changed || !box.trim();
+  $("edit-revert").disabled = !changed;
+}
+
+// editDraw draws an opened or saved song. After a save it adds the two
+// outputs for Suno, each with Copy.
+function editDraw(o, saved) {
+  edit.song = o;
+  $("edit-song").hidden = false;
+  $("edit-title").textContent = o.title;
+  $("edit-about").textContent = `${o.folder} · ${o.structure}${o.song && o.song.tempo ? ` · ${o.song.tempo} BPM` : ""}`;
+  $("edit-style").textContent = o.style || "";
+  $("edit-lyric").value = o.lyric || "";
+  $("edit-previous").textContent = (o.previous || []).length ? `Kept before: ${o.previous.join(", ")}.` : "";
+  const outs = [];
+  if (saved) {
+    outs.push(output("out-edit-lyric", "Suno: Lyrics box", "paste the saved lyric here, in Custom mode", (o.lyric || "").trim(), true, "the saved lyric, for Suno's Lyrics box"));
+    outs.push(output("out-edit-style", "Suno: Style box", `${o.folder}/style.txt, paste it into Suno's Style box`, o.style, false, "the style, for Suno's Style box"));
+  }
+  $("edit-outputs").replaceChildren(...outs);
+  editShow();
+}
+
+function editError(text) {
+  $("edit-error").hidden = !text;
+  $("edit-error").textContent = text || "";
+}
+
+async function editOpen(slug) {
+  editError("");
+  $("edit-said").textContent = "";
+  if (!slug) { $("edit-song").hidden = true; edit.song = null; return; }
+  const o = await musicHelper.open(fetchFn, slug);
+  if (o.status !== "open") { $("edit-song").hidden = true; edit.song = null; editError(o.message || "musicserve could not open that song."); return; }
+  store.set("music.editSong", slug);
+  editDraw(o, false);
+}
+
+async function editSave() {
+  if (!edit.song) return;
+  $("edit-save").disabled = true;
+  const res = await musicHelper.save(fetchFn, edit.song.slug, $("edit-lyric").value);
+  const said = musicHelper.saved(res);
+  if (said.ok) editDraw(res, true);
+  else editShow();
+  $("edit-said").className = "small " + (said.ok ? "check-ok" : "check-miss");
+  $("edit-said").textContent = said.text;
+  $("edit-said").focus();
+}
+
+// initEdit shows Edit a song once musicserve has answered, and fills its
+// list of songs by title.
+async function initEdit() {
+  TABS.push("edit");
+  $("tab-edit").hidden = false;
+  $("tab-edit").addEventListener("click", () => showTab("edit"));
+  $("tab-edit").addEventListener("keydown", (e) => {
+    const next = musicLogic.tabFor(e.key, "edit", TABS);
+    if (!next) return;
+    e.preventDefault();
+    showTab(next, true);
+  });
+  const pick = $("edit-pick");
+  const songs = await musicHelper.songs(fetchFn);
+  pick.replaceChildren(el("option", { value: "" }, songs.length ? "Choose a song…" : "No songs in songs/ yet"),
+    ...songs.map((x) => el("option", { value: x.slug }, `${x.title} (${x.stage})`)));
+  pick.addEventListener("change", () => editOpen(pick.value));
+  $("edit-lyric").addEventListener("input", () => {
+    clearTimeout(edit.timer);
+    edit.timer = setTimeout(editShow, 150);
+  });
+  $("edit-save").addEventListener("click", editSave);
+  $("edit-revert").addEventListener("click", () => {
+    if (!edit.song) return;
+    $("edit-lyric").value = edit.song.lyric || "";
+    editShow();
+  });
+  const last = store.get("music.editSong");
+  if (last && songs.some((x) => x.slug === last)) {
+    pick.value = last;
+    await editOpen(last);
+  }
+  if (store.get("music.tab") === "edit") showTab("edit");
+}
+
+// ---- my songs ----
+
+// My songs (DISPATCH-2026-11-10-MUSIC-036) keeps songs in the Operator's own
+// store, behind their sign-in, one version per save until one is finished.
+// mysongs.js talks to the store; this section draws it. Its tab shows only
+// when mysongs.js has loaded, so a musicserve built before it still serves a
+// working page.
+const mine = {
+  api: null, songs: [], song: null, versions: [], box: "", note: "",
+  said: null, compare: null, lines: null, confirm: "", renaming: false, loading: false, kept: null, writeSaid: "",
+};
+
+const when = (iso) => {
+  try { return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }); } catch { return ""; }
+};
+const nameIn = (list, id) => ((list || []).find((x) => x.id === id) || { name: id || "" }).name;
+
+// mineSay sets what My songs says next, ok or not.
+function mineSay(ok, text) {
+  mine.said = text ? { ok, text } : null;
+}
+
+function mineSaid() {
+  if (!mine.said) return null;
+  return el("p", { id: "mine-said", class: mine.said.ok ? "small check-ok" : "error", role: mine.said.ok ? "status" : "alert", tabindex: "-1" }, mine.said.text);
+}
+
+function mineFocusSaid() {
+  const s = $("mine-said");
+  if (s) s.focus();
+}
+
+// mineDraw draws My songs: the sign-in, the list, or the song open.
+function mineDraw() {
+  const root = $("mine");
+  if (!root) return;
+  if (!mine.api.signedIn()) root.replaceChildren(mineSignIn());
+  else if (mine.song) root.replaceChildren(...mineEditor());
+  else root.replaceChildren(mineList());
+}
+
+function mineSignIn() {
+  const input = el("input", { id: "mine-email", type: "email", autocomplete: "email", inputmode: "email", placeholder: "you@example.com", required: "" });
+  const form = el("form", { class: "row", onsubmit: async (e) => {
+    e.preventDefault();
+    const b = form.querySelector("button");
+    b.disabled = true;
+    const r = await mine.api.sendLink(input.value, location.origin + location.pathname);
+    b.disabled = false;
+    mineSay(r.ok, r.ok ? r.text : r.error);
+    mineDraw();
+    mineFocusSaid();
+  } },
+  el("label", { for: "mine-email" }, "Email"), input,
+  el("button", { class: "primary", type: "submit" }, "Email me a sign-in link"));
+  return el("div", { class: "card" },
+    el("h2", {}, "My songs ", el("span", { class: "hint" }, "kept in your own store, version by version, until each is finished")),
+    el("p", { class: "small" }, "Sign in with your email. A link comes by email: open it in this browser and you are back here, signed in. Only you can read or change your songs."),
+    form, mineSaid(),
+    el("p", { class: "small" }, "Without signing in, Write a song and Review lyrics work as before, kept in this browser."));
+}
+
+// mineLoad lists the songs again and, when one is open, reads it again.
+async function mineLoad(id) {
+  mine.loading = true;
+  const r = await mine.api.list();
+  mine.loading = false;
+  if (!r.ok) { mineSay(false, r.error); mineDraw(); return; }
+  mine.songs = r.songs;
+  if (id) await mineOpen(id, true);
+  else mineDraw();
+}
+
+// mineOpen opens one song: the song, its versions, and the latest in the box.
+async function mineOpen(id, quiet) {
+  const [s, v] = await Promise.all([mine.api.song(id), mine.api.versions(id)]);
+  if (!s.ok || !v.ok) {
+    mine.api.setOpen(null);
+    mine.song = null;
+    mineSay(false, (s.ok ? v : s).error);
+    mineDraw();
+    return;
+  }
+  mine.song = s.song;
+  mine.versions = v.versions;
+  mine.box = mine.versions.length ? mine.versions[0].lyric : "";
+  mine.note = "";
+  mine.compare = null;
+  mine.lines = null;
+  mine.confirm = "";
+  mine.renaming = false;
+  mine.kept = null;
+  mine.api.setOpen(id);
+  if (!quiet) mineSay(true, "");
+  mineDraw();
+}
+
+function mineList() {
+  const file = el("input", { type: "file", accept: ".json,application/json", hidden: "", onchange: async () => {
+    const f = file.files && file.files[0];
+    if (!f) return;
+    const d = musicSongs.parseImport(await f.text());
+    file.value = "";
+    if (d.error) { mineSay(false, d.error); mineDraw(); mineFocusSaid(); return; }
+    const r = await mine.api.importSong(d);
+    mineSay(r.ok, r.ok ? `Imported ${r.song.title}, with ${r.count} version${r.count === 1 ? "" : "s"}.` : r.error);
+    await mineLoad(null);
+    mineFocusSaid();
+  } });
+  const items = mine.songs.map((s) => el("li", {},
+    el("button", { class: "song-row", type: "button", onclick: () => mineOpen(s.id) },
+      el("span", { class: "song-title" }, s.title),
+      el("span", { class: "small" }, [
+        `version ${s.latest_n}`,
+        s.finished_n ? `finished at version ${s.finished_n}` : "in progress",
+        `changed ${when(s.updated_at)}`,
+      ].join(" · ")))));
+  const u = mine.api.user();
+  return el("div", { class: "card" },
+    el("div", { class: "out-head" },
+      el("h2", {}, "My songs"),
+      el("div", { class: "row tight" },
+        el("span", { class: "small" }, `Signed in as ${u ? u.email : "you"}`),
+        el("button", { class: "ghost", type: "button", onclick: async () => { await mine.api.signOut(); mine.songs = []; mine.song = null; mineSay(true, "Signed out."); mineDraw(); } }, "Sign out"))),
+    el("p", { class: "small" }, "A song starts in Write a song: press Write the outputs there and it is kept here as version 1. Open a song to edit its lyric, save versions, compare and restore them, and mark one finished."),
+    el("div", { class: "row" },
+      el("button", { class: "primary", type: "button", onclick: () => showTab("song", true) }, "Start a song"),
+      el("button", { class: "ghost", type: "button", onclick: () => file.click() }, "Import a song file"), file),
+    mineSaid(),
+    mine.loading ? el("p", { class: "small" }, "Loading your songs…")
+      : items.length ? el("ul", { class: "songs" }, ...items) : el("p", { class: "small" }, "No songs yet."));
+}
+
+// mineLatest is the song's newest version.
+const mineLatest = () => mine.versions[0] || null;
+const mineAnswers = () => (mineLatest() || {}).answers || mine.song.answers || {};
+
+// mineCheck checks the box against the song's structure, as music song
+// check does.
+function mineCheck() {
+  return SongFlow.engine(globalThis).check({ ...musicLogic.songRequest(mineAnswers()), lyric: mine.box });
+}
+
+// mineState is what the editor's buttons and check say about the box.
+function mineState() {
+  const res = mineCheck();
+  const c = musicLogic.editCheck(mine.box, res);
+  const changed = musicSongs.changed(mineLatest(), mine.box, mineAnswers());
+  return { res, c, changed };
+}
+
+// mineBits updates the check and the buttons while the Operator types,
+// without drawing the box again.
+function mineBits() {
+  const { c, changed } = mineState();
+  const latest = mineLatest();
+  const check = $("mine-check");
+  if (check) { check.className = "small " + (c.ok ? "check-ok" : "check-miss"); check.textContent = c.ok ? `✓ Every section of ${mineStructure()} is there.` : `${c.text} (${mineStructure()})`; }
+  const save = $("mine-save");
+  if (save) save.disabled = !changed || !mine.box.trim();
+  const undo = $("mine-undo");
+  if (undo) undo.disabled = !changed;
+  const fin = $("mine-finish");
+  if (fin) {
+    fin.disabled = changed || !c.ok || !latest;
+    $("mine-finish-why").textContent = changed ? "Save the box as a version first." : c.ok ? "" : "Every section must be there first.";
+  }
+}
+
+const mineStructure = () => nameIn(lib.structures, mineAnswers().structure);
+
+async function mineSave(note) {
+  const latest = mineLatest();
+  const r = await mine.api.save(mine.song.id, {
+    lyric: mine.box, answers: mineAnswers(), style: latest ? latest.style : "", structure: latest ? latest.structure : mineAnswers().structure, note,
+  });
+  if (!r.ok) { mineSay(false, r.error); mineDraw(); mineFocusSaid(); return; }
+  await mineOpen(mine.song.id, true);
+  mineSay(true, `Saved as version ${r.version.n}.`);
+  mineDraw();
+  mineFocusSaid();
+}
+
+function mineEditor() {
+  const s = mine.song;
+  const latest = mineLatest();
+  const box = el("textarea", { id: "mine-lyric", rows: "22", spellcheck: "true" });
+  box.value = mine.box;
+  box.addEventListener("input", () => { mine.box = box.value; mineBits(); });
+  const note = el("input", { id: "mine-note", type: "text", maxlength: String(musicSongs.LIMITS.note), placeholder: "what changed, if you like" });
+  note.value = mine.note;
+  note.addEventListener("input", () => { mine.note = note.value; });
+
+  const head = mine.renaming
+    ? el("form", { class: "row tight rename", onsubmit: async (e) => {
+      e.preventDefault();
+      const r = await mine.api.rename(s.id, e.target.querySelector("input").value);
+      if (r.ok) { mine.song = { ...s, title: r.song.title }; mine.renaming = false; mineSay(true, "Renamed."); } else mineSay(false, r.error);
+      mineDraw();
+    } },
+    el("label", { for: "mine-title" }, "Title"),
+    el("input", { id: "mine-title", type: "text", value: s.title, maxlength: String(musicSongs.LIMITS.title) }),
+    el("button", { class: "primary", type: "submit" }, "Rename"),
+    el("button", { class: "ghost", type: "button", onclick: () => { mine.renaming = false; mineDraw(); } }, "Cancel"))
+    : el("div", { class: "out-head" },
+      el("h2", { id: "mine-head", tabindex: "-1" }, s.title),
+      el("button", { class: "ghost", type: "button", onclick: () => { mine.renaming = true; mineDraw(); $("mine-title").focus(); } }, "Rename"));
+
+  const a = mineAnswers();
+  const about = [nameIn(lib.profiles, a.profile), nameIn(lib.styles, a.style), mineStructure(), a.tempo ? `${a.tempo} BPM` : ""].filter(Boolean).join(" · ");
+
+  const editor = el("div", { class: "card" },
+    head,
+    el("p", { class: "small" }, about),
+    el("p", { class: "small" }, `Version ${s.latest_n} is the latest${s.finished_n ? `; version ${s.finished_n} is finished` : ""}. Saving keeps every version before it.`),
+    el("h3", {}, el("label", { for: "mine-lyric" }, "Lyric"), el("span", { class: "hint" }, " type your changes; the check runs as you type, as music song check does")),
+    box,
+    el("p", { id: "mine-check", class: "small", role: "status" }),
+    el("label", { for: "mine-note", class: "small" }, "A note for this version"), note,
+    el("div", { class: "row" },
+      el("button", { id: "mine-save", class: "primary", type: "button", onclick: () => mineSave(mine.note) }, `Save as version ${s.latest_n + 1}`),
+      el("button", { id: "mine-undo", class: "ghost", type: "button", onclick: () => { mine.box = latest ? latest.lyric : ""; mineDraw(); } }, "Undo my changes"),
+      el("button", { class: "ghost", type: "button", "aria-expanded": String(!!mine.lines), onclick: () => mineLinesToggle() }, "Keep or reject lines")),
+    mineSaid(),
+    mine.lines ? mineLines() : null);
+
+  const finished = s.finished_n ? mine.versions.find((v) => v.n === s.finished_n) : null;
+  const finish = el("div", { class: "card result" },
+    finished
+      ? el("div", {},
+        el("div", { class: "out-head" },
+          el("h3", {}, `Finished: version ${finished.n}`, el("span", { class: "hint" }, "these two go into Suno, in Custom mode")),
+          el("button", { class: "ghost", type: "button", onclick: async () => { const r = await mine.api.reopen(s.id); if (r.ok) mine.song = { ...s, finished_n: null }; mineSay(r.ok, r.ok ? "Reopened: no version is marked finished." : r.error); mineDraw(); } }, "Reopen")),
+        output("mine-suno-lyric", "Suno: Lyrics box", `version ${finished.n}'s lyric`, musicSongs.plain(finished.lyric), true, "the finished lyric, for Suno's Lyrics box"),
+        output("mine-suno-style", "Suno: Style box", "the style it was written for", finished.style, false, "the style, for Suno's Style box"))
+      : el("div", {},
+        el("h3", {}, "Finish"),
+        el("p", { class: "small" }, "When the latest saved version is the one, mark it finished. Its lyric and style are then given for Suno's boxes. A later save unmarks it."),
+        el("div", { class: "row" },
+          el("button", { id: "mine-finish", class: "primary", type: "button", onclick: async () => {
+            const r = await mine.api.finish(s.id, latest.n);
+            if (r.ok) mine.song = { ...s, finished_n: latest.n };
+            mineSay(r.ok, r.ok ? `Version ${latest.n} is finished.` : r.error);
+            mineDraw();
+          } }, latest ? `Mark version ${latest.n} finished` : "Mark finished"),
+          el("span", { id: "mine-finish-why", class: "small" }))));
+
+  const versions = el("div", { class: "card" },
+    el("h3", {}, "Versions ", el("span", { class: "hint" }, "the latest first; restoring keeps the old one as the newest, so nothing is lost")),
+    el("ol", { class: "versions", reversed: "" }, ...mine.versions.map((v) => el("li", {},
+      el("div", {},
+        el("strong", {}, `Version ${v.n}`),
+        el("span", { class: "small" }, ` · ${when(v.created_at)}${v.note ? ` · ${v.note}` : ""}${s.finished_n === v.n ? " · finished" : ""}`)),
+      el("div", { class: "row tight" },
+        el("button", { class: "ghost", type: "button", "aria-expanded": String(!!mine.compare && mine.compare.n === v.n), onclick: () => { mine.compare = mine.compare && mine.compare.n === v.n ? null : { n: v.n }; mineDraw(); } }, "Compare with the box"),
+        v.n === latest.n ? null : el("button", { class: "ghost", type: "button", onclick: async () => {
+          const r = await mine.api.restore(s.id, v);
+          if (!r.ok) { mineSay(false, r.error); mineDraw(); return; }
+          await mineOpen(s.id, true);
+          mineSay(true, `Version ${v.n} is restored as version ${r.version.n}.`);
+          mineDraw();
+          mineFocusSaid();
+        } }, "Restore")),
+      mine.compare && mine.compare.n === v.n ? mineDiff(v) : null))));
+
+  const file = s.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "song";
+  const tools = el("div", { class: "card" },
+    el("h3", {}, "More"),
+    el("div", { class: "row" },
+      el("button", { class: "ghost", type: "button", onclick: () => mineToWrite() }, "Change its answers in Write a song"),
+      el("button", { class: "ghost", type: "button", onclick: () => {
+        const blob = new Blob([JSON.stringify(musicSongs.exportSong(s, mine.versions, Date.now()), null, 2) + "\n"], { type: "application/json" });
+        const link = el("a", { href: URL.createObjectURL(blob), download: `${file}.music-song.json` });
+        document.body.append(link);
+        link.click();
+        setTimeout(() => { URL.revokeObjectURL(link.href); link.remove(); }, 0);
+      } }, "Export every version"),
+      helperState.hello ? el("button", { class: "ghost", type: "button", onclick: () => mineKeep() }, "Write to songs/ on this machine") : null,
+      el("button", { class: "ghost danger", type: "button", "aria-expanded": String(mine.confirm === "delete"), onclick: () => { mine.confirm = mine.confirm === "delete" ? "" : "delete"; mineDraw(); } }, "Delete")),
+    mine.confirm === "delete" ? el("div", { class: "card confirm", role: "group" },
+      el("p", {}, `Delete ${s.title} and all ${mine.versions.length} of its versions? This cannot be undone. Export it first to keep a copy.`),
+      el("div", { class: "row tight" },
+        el("button", { class: "primary", type: "button", onclick: async () => {
+          const r = await mine.api.remove(s.id);
+          if (!r.ok) { mineSay(false, r.error); mineDraw(); return; }
+          mine.song = null;
+          mineSay(true, `Deleted ${s.title}.`);
+          await mineLoad(null);
+          mineFocusSaid();
+        } }, "Delete it"),
+        el("button", { class: "ghost", type: "button", onclick: () => { mine.confirm = ""; mineDraw(); } }, "Keep it"))) : null,
+    mine.confirm === "write" ? el("div", { class: "card confirm", role: "group" },
+      el("p", {}, "Write a song holds another song. Replace it there with this one? That song stays in My songs if it was kept."),
+      el("div", { class: "row tight" },
+        el("button", { class: "primary", type: "button", onclick: () => mineToWrite(true) }, "Replace it"),
+        el("button", { class: "ghost", type: "button", onclick: () => { mine.confirm = ""; mineDraw(); } }, "Cancel"))) : null,
+    mine.kept ? el("p", { class: "small " + (mine.kept.ok ? "check-ok" : "check-miss"), role: "status" }, mine.kept.text) : null);
+
+  setTimeout(mineBits, 0);
+  return [
+    el("div", { class: "row mine-back" },
+      el("button", { class: "ghost", type: "button", onclick: async () => { mine.song = null; mine.api.setOpen(null); mineSay(true, ""); await mineLoad(null); } }, "← All songs")),
+    editor, finish, versions, tools,
+  ];
+}
+
+// mineDiff shows a version against the box, line by line.
+function mineDiff(v) {
+  const rows = musicSongs.diff(v.lyric, mine.box);
+  const same = rows.every((r) => r.op === " ");
+  return el("div", { class: "diff-wrap" },
+    el("p", { class: "small" }, same ? `Version ${v.n} and the box are the same.` : `Version ${v.n} against the box: − only in version ${v.n}, + only in the box.`),
+    same ? null : el("pre", { class: "box diff" }, ...rows.map((r) => el("span", { class: r.op === "+" ? "add" : r.op === "-" ? "del" : "same" }, `${r.op === " " ? " " : r.op === "+" ? "+" : "−"} ${r.text}\n`))));
+}
+
+// mineLinesToggle opens the box's lines to keep or reject, as Review lyrics
+// does; the revision goes back into the box, where it can be typed over.
+function mineLinesToggle() {
+  if (mine.lines) { mine.lines = null; mineDraw(); return; }
+  const res = JSON.parse(musicParse(mine.box));
+  if (res.error) { mineSay(false, res.error); mineDraw(); return; }
+  mine.lines = res.result.lines;
+  mineDraw();
+}
+
+function mineLines() {
+  const ol = el("ol", { class: "lines" });
+  mine.lines.forEach((l, i) => {
+    if (i === 0 || l.sectionLabel !== mine.lines[i - 1].sectionLabel) ol.append(el("li", { class: "section" }, l.sectionLabel || "(no section)"));
+    const set = (st) => { l.status = l.status === st ? "pending" : st; mineDraw(); };
+    ol.append(el("li", { class: `line ${l.status}` },
+      el("span", { class: "n" }, String(l.lineNumber)),
+      el("span", { class: "text" }, l.content),
+      el("span", { class: "acts" },
+        el("button", { class: "k", type: "button", "aria-pressed": String(l.status === "kept"), onclick: () => set("kept") }, "Keep"),
+        el("button", { class: "r", type: "button", "aria-pressed": String(l.status === "rejected"), onclick: () => set("rejected") }, "Reject"))));
+  });
+  const rejected = mine.lines.filter((l) => l.status === "rejected").length;
+  return el("div", { class: "card mine-lines" },
+    el("p", { class: "small" }, "Reject a line and the revision marks it [LYRICS NEEDED], for you or your AI to rewrite. Lines you leave are kept."),
+    ol,
+    el("div", { class: "row" },
+      el("button", { class: "primary", type: "button", disabled: rejected ? null : "", onclick: () => {
+        const lines = mine.lines.map((l) => ({ ...l, status: l.status === "rejected" ? "rejected" : "kept" }));
+        const r = JSON.parse(musicRebuild(JSON.stringify(lines)));
+        if (r.error) { mineSay(false, r.error); mineDraw(); return; }
+        mine.box = r.revised;
+        mine.lines = null;
+        mineSay(true, `${rejected} line${rejected === 1 ? " is" : "s are"} marked [LYRICS NEEDED] in the box. Save it as a version when it is right.`);
+        mineDraw();
+      } }, `Put the revision in the box (${rejected} rejected)`)));
+}
+
+// mineToWrite opens the song in Write a song, to change its answers there;
+// a new version is saved from there. Another song open there is replaced
+// only after the Operator says so.
+function mineToWrite(sure) {
+  const s = mine.song;
+  const chat = store.get(SongFlow.CHAT_KEY);
+  const other = chat && (chat.answered || []).length && mine.api.writingId() !== s.id;
+  if (other && !sure) { mine.confirm = "write"; mineDraw(); return; }
+  store.set(SongFlow.KEY, mineAnswers());
+  store.set(SongFlow.CHAT_KEY, { answered: flow.flow.questions.map((q) => q.id), written: true });
+  store.set(SongFlow.LYRIC_KEY, mine.box);
+  mine.api.setWriting(s.id);
+  mine.confirm = "";
+  const loaded = flow.load();
+  chatApi.reset({ answered: loaded.meta.answered });
+  showTab("song", true);
+}
+
+// mineKeep writes the open song to songs/<slug> through musicserve, on this
+// machine only.
+async function mineKeep() {
+  if (!mine.box.trim()) { mine.kept = { ok: false, text: "The box has no lyric to write. Nothing was written." }; mineDraw(); return; }
+  const r = await musicHelper.keep(fetchFn, musicLogic.songRequest(mineAnswers()), mine.box);
+  mine.kept = musicHelper.kept(r);
+  mineDraw();
+}
+
+// mineWriteCard is Write a song's line about My songs, under the outputs.
+function mineWriteCard() {
+  if (!mine.api) return null;
+  const card = el("div", { id: "mine-write", class: "card result" });
+  mineWriteDraw(card);
+  return card;
+}
+
+function mineWriteDraw(card) {
+  if (!mine.api.signedIn()) {
+    card.replaceChildren(el("p", { class: "small" }, "Sign in under My songs to keep this song there, version by version, until it is finished. ",
+      el("button", { class: "ghost", type: "button", onclick: () => showTab("mine", true) }, "Go to My songs")));
+    return;
+  }
+  const id = mine.api.writingId();
+  const o = flow.outputs();
+  const v = { answers: flow.state(), lyric: flow.lyric(), style: o && o.styleText ? o.styleText : "", structure: flow.structure().id };
+  const said = el("span", { class: "small", role: "status" }, mine.writeSaid || "");
+  const go = async (fn) => {
+    const r = await fn();
+    mine.writeSaid = r.ok ? r.text : r.error;
+    mineWriteDraw(card);
+    await mineLoad(mine.song ? mine.song.id : null);
+  };
+  card.replaceChildren(
+    el("h3", {}, "My songs"),
+    id
+      ? el("div", { class: "row tight" },
+        el("button", { class: "ghost", type: "button", onclick: () => go(async () => {
+          const r = await mine.api.save(id, { ...v, note: "from Write a song" });
+          return r.ok ? { ok: true, text: `Saved as version ${r.version.n}.` } : r;
+        }) }, "Save this as a new version"),
+        el("button", { class: "ghost", type: "button", onclick: async () => { showTab("mine", true); await mineOpen(id); } }, "Open in My songs"),
+        said)
+      : el("div", { class: "row tight" },
+        el("button", { class: "primary", type: "button", onclick: () => go(() => mineCreate(v)) }, "Keep it in My songs"),
+        said));
+}
+
+// mineCreate keeps the song Write a song holds as a new song, version 1.
+async function mineCreate(v) {
+  const r = await mine.api.create({ ...v, note: "from Write a song" });
+  if (!r.ok) return r;
+  mine.api.setWriting(r.song.id);
+  return { ok: true, text: `Kept in My songs as ${r.song.title}, version 1.` };
+}
+
+// mineAutoKeep keeps the song in My songs when Write the outputs is pressed,
+// once, if the Operator is signed in.
+async function mineAutoKeep() {
+  if (!mine.api || !mine.api.signedIn() || mine.api.writingId()) return;
+  const o = flow.outputs();
+  if (!o || o.error) return;
+  const r = await mineCreate({ answers: flow.state(), lyric: flow.lyric(), style: o.styleText, structure: flow.structure().id });
+  mine.writeSaid = r.ok ? r.text : r.error;
+  const card = $("mine-write");
+  if (card) mineWriteDraw(card);
+  if (r.ok) await mineLoad(null);
+}
+
+// initMine adds My songs' tab when mysongs.js has loaded. It runs before
+// initTabs, so the tab is in TABS.
+function initMine() {
+  if (typeof musicSongs === "undefined") return;
+  mine.api = musicSongs.client({ fetchFn, storage: store });
+  TABS.splice(1, 0, "mine");
+  $("tab-mine").hidden = false;
+}
+
+// startMine reads a sign-in link coming back, then lists the songs.
+async function startMine() {
+  if (!mine.api) return;
+  const t = await mine.api.take(location.hash);
+  if (t) {
+    history.replaceState(null, "", location.pathname + location.search);
+    mineSay(t.ok, t.ok ? `Signed in as ${t.user.email}.` : t.error);
+    showTab("mine");
+  }
+  mineDraw();
+  if (mine.api.signedIn()) await mineLoad(mine.api.openId());
+  if (chatApi) chatApi.draw();
+}
+
 // ---- start ----
 
 function initCopy() {
@@ -512,13 +1086,17 @@ window.musicReady = () => {
   $("version").textContent = lib.version;
   try { localStorage.removeItem("music.generate"); } catch { /* storage is optional */ }
   $("loading").hidden = true;
+  initMine();
   initTabs();
   initCopy();
   initLook();
   initSong();
   initHelper();
   initReview();
-  showTab(TABS.includes(store.get("music.tab")) ? store.get("music.tab") : "song");
+  const tab = store.get("music.tab");
+  showTab(TABS.includes(tab) ? tab : "song");
+  if (tab === "edit") store.set("music.tab", tab);
+  startMine();
 };
 
 (async () => {

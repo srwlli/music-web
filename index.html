@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Music Prompt Writer</title>
-<meta name="description" content="Write a song one question at a time: a song type, a sound, a feeling, a story, a hook, a structure. You get a brief for your agent, the Suno style and lyrics template, and the terminal command. Review lyrics line by line. Runs in your browser; nothing is sent anywhere.">
+<meta name="description" content="Write a song one question at a time: a song type, a sound, a feeling, a story, a hook, a structure. You get a brief for your agent, the Suno style and lyrics template, and the terminal command. Review lyrics line by line. Sign in to keep your songs, version by version, until each is finished. Runs in your browser; only My songs is sent, to your own store.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23f2a03d'/%3E%3Cpath d='M12 22.5a3.5 3.5 0 1 1-2-3.16V8l12-2.5v13a3.5 3.5 0 1 1-2-3.16V10.1l-8 1.66z' fill='%23000'/%3E%3C/svg%3E">
 <script>
 // The theme and panels the viewer chose, set before the page draws.
@@ -25,12 +25,14 @@
       <span class="logo" aria-hidden="true">♪</span>
       <div>
         <h1>music</h1>
-        <p class="tag">A brief for your AI, the style for Suno. Runs in your browser; nothing is sent anywhere.</p>
+        <p class="tag">A brief for your AI, the style for Suno. Runs in your browser; only My songs is sent, to your own store.</p>
       </div>
     </div>
     <nav class="tabs" role="tablist">
       <button role="tab" id="tab-song" aria-controls="panel-song" aria-selected="true" tabindex="0">Write a song</button>
+      <button role="tab" id="tab-mine" aria-controls="panel-mine" aria-selected="false" tabindex="-1" hidden>My songs</button>
       <button role="tab" id="tab-review" aria-controls="panel-review" aria-selected="false" tabindex="-1">Review lyrics</button>
+      <button role="tab" id="tab-edit" aria-controls="panel-edit" aria-selected="false" tabindex="-1" hidden>Edit a song</button>
     </nav>
   </div>
 </header>
@@ -54,6 +56,10 @@
       <p id="migrated" class="card migrated" role="status" hidden>Your song from the earlier page is here, with every answer it had. Change any of them below.</p>
       <div id="chat"></div>
     </div>
+  </section>
+
+  <section id="panel-mine" role="tabpanel" aria-labelledby="tab-mine" hidden>
+    <div id="mine"></div>
   </section>
 
   <section id="panel-review" role="tabpanel" aria-labelledby="tab-review" hidden>
@@ -111,10 +117,39 @@
       </div>
     </div>
   </section>
+
+  <section id="panel-edit" role="tabpanel" aria-labelledby="tab-edit" hidden>
+    <div class="card" id="edit-card">
+      <h2><label for="edit-pick">Open a song</label> <span class="hint">a folder under songs/, through musicserve</span></h2>
+      <div class="row">
+        <select id="edit-pick"><option value="">Choose a song…</option></select>
+      </div>
+      <p id="edit-error" class="error" role="alert" hidden></p>
+    </div>
+    <div id="edit-song" hidden>
+      <div class="card">
+        <h2 id="edit-title"></h2>
+        <p class="small" id="edit-about"></p>
+        <h3>Style</h3>
+        <pre id="edit-style" class="box"></pre>
+        <h3><label for="edit-lyric">Lyric</label> <span class="hint">lyric.txt; the check runs as you type, as music song check does</span></h3>
+        <textarea id="edit-lyric" rows="24" spellcheck="true"></textarea>
+        <p id="edit-check" class="small" role="status"></p>
+        <div class="row">
+          <button id="edit-save" class="primary" type="button">Save lyric.txt</button>
+          <button id="edit-revert" class="ghost" type="button">Undo my changes</button>
+          <span id="edit-said" class="small" role="status" tabindex="-1"></span>
+        </div>
+        <p class="small">Saving never overwrites: the lyric it replaces is kept beside it as <code>lyric-prev-1.txt</code>, then <code>lyric-prev-2.txt</code>, and so on. Nothing goes to Suno.</p>
+        <p class="small" id="edit-previous"></p>
+      </div>
+      <div id="edit-outputs"></div>
+    </div>
+  </section>
 </main>
 
 <footer class="wrap foot">
-  <p>music <span id="version"></span>. Your answers and lyric review are kept in this browser only.</p>
+  <p>music <span id="version"></span>. Your answers and lyric review are kept in this browser. My songs are kept in your own store, behind your sign-in.</p>
   <div class="look">
     <div class="seg" role="group" aria-label="Theme">
       <span class="seg-label" aria-hidden="true">Theme</span>
@@ -133,6 +168,7 @@
 <script src="wasm_exec.js"></script>
 <script src="logic.js"></script>
 <script src="helper.js"></script>
+<script src="mysongs.js"></script>
 <script src="chat.js"></script>
 <script src="songflow.js"></script>
 <script src="app.js"></script>
