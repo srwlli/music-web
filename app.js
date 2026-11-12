@@ -599,7 +599,7 @@ async function initEdit() {
 // when mysongs.js has loaded, so a musicserve built before it still serves a
 // working page.
 const mine = {
-  api: null, songs: [], song: null, versions: [], box: "", note: "",
+  api: null, songs: [], song: null, versions: [], box: "", note: "", signEmail: "", signCode: "",
   said: null, compare: null, lines: null, confirm: "", renaming: false, loading: false, kept: null, writeSaid: "",
 };
 
@@ -632,24 +632,48 @@ function mineDraw() {
   else root.replaceChildren(mineList());
 }
 
+// AUTH_EMAIL keeps the email a sign-in was sent to, in this browser only, so
+// the code can be typed after the page was closed to read the mail.
+const AUTH_EMAIL = "music.authEmail";
+
 function mineSignIn() {
-  const input = el("input", { id: "mine-email", type: "email", autocomplete: "email", inputmode: "email", placeholder: "you@example.com", required: "" });
+  const input = el("input", { id: "mine-email", type: "email", autocomplete: "email", inputmode: "email", placeholder: "you@example.com", required: "", value: mine.signEmail || store.get(AUTH_EMAIL) || "", oninput: () => { mine.signEmail = input.value; } });
   const form = el("form", { class: "row", onsubmit: async (e) => {
     e.preventDefault();
     const b = form.querySelector("button");
     b.disabled = true;
     const r = await mine.api.sendLink(input.value, location.origin + location.pathname);
     b.disabled = false;
+    if (r.ok) store.set(AUTH_EMAIL, input.value.trim());
     mineSay(r.ok, r.ok ? r.text : r.error);
     mineDraw();
-    mineFocusSaid();
+    if (r.ok && $("mine-code")) $("mine-code").focus();
+    else mineFocusSaid();
   } },
   el("label", { for: "mine-email" }, "Email"), input,
   el("button", { class: "primary", type: "submit" }, "Email me a sign-in link"));
+  const code = el("input", { id: "mine-code", type: "text", inputmode: "url", autocomplete: "one-time-code", autocapitalize: "off", spellcheck: "false", placeholder: "paste the email's Sign in link", required: "", value: mine.signCode || "", oninput: () => { mine.signCode = code.value; } });
+  const codeForm = el("form", { class: "row", onsubmit: async (e) => {
+    e.preventDefault();
+    const b = codeForm.querySelector("button");
+    b.disabled = true;
+    const r = await mine.api.signInHere(input.value, code.value);
+    b.disabled = false;
+    if (!r.ok) { mineSay(false, r.error); mineDraw(); mineFocusSaid(); return; }
+    store.drop(AUTH_EMAIL);
+    mine.signEmail = "";
+    mine.signCode = "";
+    mineSay(true, `Signed in as ${r.user.email}.`);
+    mineDraw();
+    await mineLoad(mine.api.openId());
+    mineFocusSaid();
+  } },
+  el("label", { for: "mine-code" }, "Link"), code,
+  el("button", { class: "primary", type: "submit" }, "Sign in"));
   return el("div", { class: "card" },
     el("h2", {}, "My songs ", el("span", { class: "hint" }, "kept in your own store, version by version, until each is finished")),
-    el("p", { class: "small" }, "Sign in with your email. A link comes by email: open it in this browser and you are back here, signed in. Only you can read or change your songs."),
-    form, mineSaid(),
+    el("p", { class: "small" }, "Sign in with your email, once on each device. In the email, press and hold the Sign in link, copy it and paste it below: this page is signed in, and stays signed in until you sign out, wherever your mail app opens links. Opening the link works too, in the browser it opens in. Only you can read or change your songs."),
+    form, codeForm, mineSaid(),
     el("p", { class: "small" }, "Without signing in, Write a song and Review lyrics work as before, kept in this browser."));
 }
 

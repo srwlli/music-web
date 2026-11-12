@@ -9,9 +9,14 @@
 // What a signed-in Operator reads and writes is held to their own rows by the
 // store's row-level security (supabase/migrations). No other key is here.
 //
-// Sign-in is by a link sent by email. The link comes back to this page with
-// the session in its #hash; take() reads it, and the session is kept in this
-// browser under music.auth until the Operator signs out.
+// Sign-in is by a link sent by email. Opened, the link comes back to the
+// browser it opened in with the session in its #hash, and take() reads it.
+// Copied and pasted into this page, its token is traded here for a session by
+// signInHere(), so the browser the Operator uses is the one signed in,
+// wherever their mail app opens links (DISPATCH-2026-11-12-MUSIC-039). A code,
+// when the email shows one, is taken the same way. Either way the session is
+// kept in this browser under music.auth, shared by its tabs and refreshed,
+// until the Operator signs out: the project sets no time limit.
 "use strict";
 
 const musicSongs = (() => {
@@ -25,6 +30,7 @@ const musicSongs = (() => {
   // what is too long before the store refuses it.
   const LIMITS = { title: 200, lyric: 20000, style: 4000, structure: 200, note: 500, answers: 32768 };
   const UNTITLED = "Untitled song";
+  const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const PAUSED = "The store did not answer. The Supabase project may be paused: a free project pauses after a week unused. Restore it from the Supabase dashboard, then try again. Nothing here was lost.";
 
@@ -37,6 +43,22 @@ const musicSongs = (() => {
     if (status === 429) return "Too many tries for now. The sign-in email can be sent only a few times an hour; wait, then try again.";
     if (/signups? not allowed/i.test(String(said))) return "That email has no account here, and new accounts are turned off.";
     return said ? `The store refused it: ${said}.`.replace(/\.\.$/, ".") : `The store refused it (HTTP ${status}).`;
+  }
+
+  // codeOf is a typed sign-in code with its spaces and dashes taken out, or ""
+  // when it is not one.
+  function codeOf(typed) {
+    const c = String(typed || "").replace(/[\s-]/g, "");
+    return /^\d{6,10}$/.test(c) ? c : "";
+  }
+
+  // linkOf is the token in a pasted sign-in link, or "" when the text is not
+  // this project's sign-in link.
+  function linkOf(typed) {
+    let u;
+    try { u = new globalThis.URL(String(typed || "").trim()); } catch { return ""; }
+    if (u.origin !== URL || u.pathname !== "/auth/v1/verify") return "";
+    return u.searchParams.get("token") || "";
   }
 
   // fromHash reads what the sign-in link left in the page's #hash: a session,
@@ -164,6 +186,13 @@ const musicSongs = (() => {
       session = s;
       if (s) storage.set(SESSION_KEY, s); else storage.drop(SESSION_KEY);
     };
+    // newer is the session another tab of this page has kept since this one
+    // read it, or null. The store turns a refresh token into a new one, so a
+    // tab that refreshed with an old one would be refused and sign out.
+    const newer = () => {
+      const s = storage.get(SESSION_KEY);
+      return s && s.refresh_token && (!session || s.refresh_token !== session.refresh_token) ? s : null;
+    };
 
     async function call(method, path, { body, bearer, prefer } = {}) {
       const headers = { apikey: KEY, Authorization: `Bearer ${bearer || KEY}` };
@@ -182,12 +211,27 @@ const musicSongs = (() => {
       return { ok: true, status: r.status, body: data };
     }
 
-    // refresh trades the refresh token for a new session. A refusal signs
-    // the Operator out, since the session cannot be used again.
-    async function refresh() {
+    // refresh trades the refresh token for a new session, once at a time
+    // however many calls ask. A session another tab refreshed is taken as it
+    // is. A refusal signs the Operator out, since the session cannot be used
+    // again, unless another tab kept a new one meanwhile.
+    let refreshing = null;
+    function refresh() {
+      if (!refreshing) refreshing = refreshOnce().finally(() => { refreshing = null; });
+      return refreshing;
+    }
+    async function refreshOnce() {
+      const other = newer();
+      if (other) {
+        session = other;
+        if (other.expires_at - 60 > nowSec()) return true;
+      }
       if (!session || !session.refresh_token) return false;
-      const r = await call("POST", "/auth/v1/token?grant_type=refresh_token", { body: { refresh_token: session.refresh_token } });
+      const used = session.refresh_token;
+      const r = await call("POST", "/auth/v1/token?grant_type=refresh_token", { body: { refresh_token: used } });
       if (!r.ok) {
+        const since = newer();
+        if (since) { session = since; return true; }
         if (r.status >= 400 && r.status < 500) keep(null);
         return false;
       }
@@ -205,6 +249,8 @@ const musicSongs = (() => {
     // token is a usable access token, refreshed when it runs out within a
     // minute, or "" when no one is signed in.
     async function token() {
+      const other = newer();
+      if (other) session = other;
       if (!session) return "";
       if (session.expires_at - 60 <= nowSec() && !(await refresh())) return "";
       return session ? session.access_token : "";
@@ -230,14 +276,41 @@ const musicSongs = (() => {
       user: () => (session && session.user) || null,
       signedIn: () => !!(session && session.access_token && session.user),
 
-      // sendLink asks the store to email a sign-in link that returns to
-      // back, the page's own address.
+      // sendLink asks the store to email a sign-in code and a link that
+      // returns to back, the page's own address.
       async sendLink(email, back) {
         const e = String(email || "").trim();
-        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return { ok: false, error: "Type the email you sign in with." };
+        if (!EMAIL.test(e)) return { ok: false, error: "Type the email you sign in with." };
         const r = await call("POST", `/auth/v1/otp?redirect_to=${enc(back)}`, { body: { email: e, create_user: true } });
         if (!r.ok) return r;
-        return { ok: true, text: `A sign-in link is on its way to ${e}. Open it in this browser; it works once, within the hour.` };
+        return { ok: true, text: `A sign-in email is on its way to ${e}. Press and hold its Sign in link, copy it and paste it below to sign in here, or open it in this browser. It works once, within the hour.` };
+      },
+
+      // signInHere signs this browser in with the sign-in email's link,
+      // pasted, or with its code, typed with the email it went to.
+      async signInHere(email, typed) {
+        const hash = linkOf(typed);
+        let body;
+        if (hash) body = { type: "email", token_hash: hash };
+        else {
+          const code = codeOf(typed);
+          if (!code) return { ok: false, error: "Paste the Sign in link from the email: press and hold it in the email, copy it, and paste it here." };
+          const e = String(email || "").trim();
+          if (!EMAIL.test(e)) return { ok: false, error: "Type the email the code was sent to." };
+          body = { type: "email", email: e, token: code };
+        }
+        const r = await call("POST", "/auth/v1/verify", { body });
+        if (!r.ok) {
+          if (r.status === 403 || /expired|invalid/i.test(String((r.body && (r.body.msg || r.body.message || r.body.error_code)) || ""))) {
+            return { ok: false, status: r.status, error: hash
+              ? "That link has run out or was used already. Send a new email."
+              : "That code is wrong, has run out or was used already. Check it, or send a new email." };
+          }
+          return r;
+        }
+        if (!r.body || !r.body.access_token || !r.body.refresh_token || !r.body.user) return { ok: false, error: "The store did not give a session for that code. Send a new email." };
+        keep(sessionOf(r.body));
+        return { ok: true, user: session.user };
       },
 
       // take reads the sign-in link's #hash. It answers null when the hash
@@ -365,7 +438,7 @@ const musicSongs = (() => {
     return api;
   }
 
-  return { URL, KEY, SESSION_KEY, OPEN_KEY, WRITING_KEY, FORMAT, LIMITS, UNTITLED, PAUSED, trouble, fromHash, stable, plain, changed, titleOf, tooLong, diff, exportSong, parseImport, client };
+  return { URL, KEY, SESSION_KEY, OPEN_KEY, WRITING_KEY, FORMAT, LIMITS, UNTITLED, PAUSED, trouble, codeOf, linkOf, fromHash, stable, plain, changed, titleOf, tooLong, diff, exportSong, parseImport, client };
 })();
 
 globalThis.musicSongs = musicSongs;
