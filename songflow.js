@@ -129,7 +129,17 @@ const SongFlow = (() => {
     const sizeTag = (t) => (t.size ? `${t.size} song` : null);
     const tempoOf = (s) => styleOf(s);
 
+    // The perspectives, as the brief words them, shorter.
+    const persons = [
+      { value: "first", label: "First person", detail: "The singer is the \"I\" and tells what they saw, did and felt." },
+      { value: "second", label: "Second person", detail: "Sung to \"you\", one person, from the first line to the last." },
+      { value: "third", label: "Third person", detail: "Someone else's story, told from outside it." },
+    ];
+
     const questions = [
+      text("concept", "Idea", "What is the one thing the song says?",
+        "The concept: one idea every section serves. Skip it and the writer chooses one.",
+        "a light left on is a question nobody asks out loud"),
       {
         id: "type", stage: "Song type", kind: "cards", optional: true,
         prompt: () => "What is the song for?",
@@ -230,13 +240,32 @@ const SongFlow = (() => {
         apply: (v) => answer("style", () => { state = L.choose(state, "style", v); }),
         applySuggestion: () => answer("style", () => { state = L.suggest(state, "style"); }),
       },
-      text("emotion", "Feeling", "What should it feel like?",
+      text("theme", "Theme & feeling", "What is it about?",
         (s) => {
           const th = profileOf(s).themes;
           const list = Array.isArray(th) ? th.join(", ") : String(th || "");
-          return list ? `This profile writes about ${list}. Name the feeling in your own words.` : "Name the feeling in your own words.";
+          return list ? `The theme is the subject. This profile writes about ${list}.` : "The theme is the subject, in your own words.";
         },
+        "waiting up for someone"),
+      text("emotion", "Theme & feeling", "What should it feel like?",
+        "The mood: two feelings in tension work best. Name them in your own words.",
         "regret and resolve"),
+      {
+        id: "perspective", stage: "Story", kind: "cards", optional: true,
+        prompt: () => "Whose voice is it in?",
+        help: (s) => {
+          const t = typeOf(s);
+          return t ? `Skip it and ${t.name}'s own point of view stands.` : "Skip it and the writer chooses.";
+        },
+        skipLabel: (s) => (typeOf(s) ? "Let the song type decide" : SKIP),
+        options: () => persons,
+        value: (s) => s.perspective || "",
+        summary: (s) => {
+          const p = persons.find((x) => x.value === s.perspective);
+          return p ? { text: p.label, skipped: false } : { text: typeOf(s) ? "Let the song type decide" : SKIP, skipped: true };
+        },
+        apply: (v) => answer("perspective", () => { state.perspective = L.PERSPECTIVES.includes(v) ? v : ""; }),
+      },
       text("scene", "Story", "Where does it happen?", "The scene carries the story: a place, a moment, who is there.", "a parking lot at closing time"),
       text("arc", "Story", "How does it change from start to end?", "Where the song starts and where it lands.", "from holding on to letting go"),
       text("hook", "Hook & title", "Is there a line it keeps coming back to?", "The hook, in your words. Skip it and the writer finds one.", "the last light on"),
@@ -279,7 +308,7 @@ const SongFlow = (() => {
     ];
 
     const flow = {
-      stages: ["Song type", "Sound", "Feeling", "Story", "Hook & title", "Structure & tempo", "Review"],
+      stages: ["Idea", "Song type", "Sound", "Theme & feeling", "Story", "Hook & title", "Structure & tempo", "Review"],
       questions,
     };
     const ids = questions.map((q) => q.id);

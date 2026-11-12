@@ -140,7 +140,8 @@ function drawEnd(node, api) {
   const s = flow.state();
   const Q = (id) => flow.flow.questions.find((q) => q.id === id);
   const shown = new Set(Chat.visible(flow.flow, s).map((q) => q.id));
-  const rows = [["Song type", "type"], ["Sound", "profile"], ["Style", "style"], ["Structure", "structure"], ["Tempo", "tempo"], ["Title", "title"]]
+  const rows = [["Concept", "concept"], ["Song type", "type"], ["Sound", "profile"], ["Style", "style"], ["Structure", "structure"], ["Tempo", "tempo"],
+    ["Perspective", "perspective"], ["Title", "title"]]
     .filter(([, id]) => shown.has(id))
     .map(([label, id]) => [label, Q(id).summary(s)]);
   node.append(

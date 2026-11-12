@@ -50,7 +50,10 @@ const musicLogic = {
   // ---- write a song ----
 
   // SONG_INPUTS are the song's own words, as `music song new` takes them.
-  SONG_INPUTS: ["title", "emotion", "scene", "arc", "hook"],
+  // The concept, theme and perspective came later
+  // (WO-01M786VZW4SAAKDVHDRC0H0C8P); a perspective is one of PERSPECTIVES.
+  SONG_INPUTS: ["concept", "theme", "perspective", "title", "emotion", "scene", "arc", "hook"],
+  PERSPECTIVES: ["first", "second", "third"],
 
   // songRequest is what musicSong is asked for: the profile, the song types,
   // the tempo and the inputs as they stand, and a structure or style only
@@ -180,6 +183,7 @@ const musicLogic = {
     const picked = s.picked || {};
     for (const k of ["structure", "style"]) state.picked[k] = !!picked[k] && state[k] !== "";
     for (const k of musicLogic.SONG_INPUTS) state[k] = typeof s[k] === "string" ? s[k] : "";
+    if (!musicLogic.PERSPECTIVES.includes(state.perspective)) state.perspective = "";
     return state;
   },
 
