@@ -259,6 +259,10 @@ const musicLogic = {
     if (head && text.includes(head)) {
       return { text: "", note: "That is the brief, not a lyric. Give the brief to Claude, ChatGPT or another AI, and paste back the lyric it writes." };
     }
+    // A lyric that still says [LYRICS NEEDED] is not finished, and Suno
+    // would sing the mark (WO-01M78DENQEB904PB2NZ7XMG3S8 R8).
+    const n = musicLogic.needed(text);
+    if (n && !res.missing.length) return { text: "", note: musicLogic.neededText(n), needed: n };
     return { text: res.missing.length ? "" : text, note: "" };
   },
 
@@ -291,7 +295,206 @@ const musicLogic = {
       return { ok: false, text: (res && (res.error || res.fatal)) || "The lyric could not be checked." };
     }
     if (res.missing.length) return { ok: false, text: `Missing: ${res.missing.join(", ")}.` };
+    const n = musicLogic.needed(lyric);
+    if (n) return { ok: false, text: musicLogic.neededText(n) };
     return { ok: true, text: "Every section is there." };
+  },
+
+  // ---- the line editor (WO-01M78DENQEB904PB2NZ7XMG3S8) ----
+
+  // NEEDED is the mark a removed line leaves, as lyrics.Needed writes it.
+  NEEDED: "[LYRICS NEEDED]",
+
+  // needed counts the lines of a lyric that are the mark and nothing else.
+  needed(lyric) {
+    return String(lyric || "").split(/\r?\n/).filter((l) => l.trim() === musicLogic.NEEDED).length;
+  },
+
+  // neededText says how many lines still need words (R8).
+  neededText(n) {
+    return `${n} line${n === 1 ? " still says" : "s still say"} ${musicLogic.NEEDED}. Write ${n === 1 ? "it" : "them"}, or ask your AI to, before it goes to Suno.`;
+  },
+
+  // NO_WORDS is review.ErrNoWords: a change to nothing is refused, because a
+  // line left to be written is removed.
+  NO_WORDS: "A changed line needs words. To leave it to be written, remove it.",
+  ONE_LINE: "A changed line is one line. Change each line on its own.",
+
+  // act applies one act to the line at index i and gives back a new state,
+  // leaving the old one as it was, so Undo can put it back. The acts mirror
+  // review.Session (R1): keep keeps the words as they are now; change takes
+  // new words, keeps the pasted ones in original the first time, and clears
+  // original when the words go back to the pasted ones; remove puts the
+  // pasted words back and marks the line, which Revise writes as
+  // [LYRICS NEEDED]; restore puts the pasted words back and keeps the line.
+  // After keep, change or remove the editor moves to the next line. An act it
+  // refuses gives back the state unchanged with an error.
+  act(state, act, text) {
+    const i = state.current;
+    const old = state.lines[i];
+    if (!old) return { state, error: "There is no line to act on." };
+    const line = { ...old };
+    let next = i;
+    switch (act) {
+      case "keep":
+        line.status = "kept";
+        next = i + 1;
+        break;
+      case "remove":
+        if (line.original) { line.content = line.original; delete line.original; }
+        line.status = "rejected";
+        next = i + 1;
+        break;
+      case "change": {
+        const words = String(text == null ? "" : text).trim();
+        if (!words) return { state, error: musicLogic.NO_WORDS };
+        if (/[\r\n]/.test(words)) return { state, error: musicLogic.ONE_LINE };
+        if (!line.original && words !== line.content) line.original = line.content;
+        line.content = words;
+        if (line.content === line.original) delete line.original;
+        line.status = "kept";
+        next = i + 1;
+        break;
+      }
+      case "restore":
+        if (!line.original) return { state, error: "This line has its pasted words." };
+        line.content = line.original;
+        delete line.original;
+        break;
+      default:
+        return { state, error: `Unknown act ${act}.` };
+    }
+    const lines = state.lines.slice();
+    lines[i] = line;
+    const undo = (state.undo || []).concat([{ i, line: old }]);
+    return { state: { ...state, lines, undo, current: Math.min(next, lines.length - 1) }, error: "" };
+  },
+
+  // undo steps back through the acts, one at a time, to the line it changed.
+  undo(state) {
+    const stack = state.undo || [];
+    if (!stack.length) return state;
+    const { i, line } = stack[stack.length - 1];
+    const lines = state.lines.slice();
+    lines[i] = line;
+    return { ...state, lines, undo: stack.slice(0, -1), current: i };
+  },
+
+  // keepRest keeps every line not yet decided, each its own step for Undo,
+  // and stays on the line it was on.
+  keepRest(state) {
+    const lines = state.lines.slice();
+    const undo = (state.undo || []).slice();
+    lines.forEach((l, i) => {
+      if (l.status !== "pending") return;
+      undo.push({ i, line: l });
+      lines[i] = { ...l, status: "kept" };
+    });
+    return { ...state, lines, undo };
+  },
+
+  // move goes to line i, kept inside the lyric.
+  move(state, i) {
+    const n = state.lines.length;
+    return { ...state, current: n ? Math.max(0, Math.min(n - 1, i)) : 0 };
+  },
+
+  // badge is what a line's status says on the page.
+  badge(line) {
+    if (!line) return { kind: "pending", text: "" };
+    if (line.status === "rejected") return { kind: "rejected", text: `Removed: ${musicLogic.NEEDED}` };
+    if (line.status === "kept") return line.original ? { kind: "changed", text: "Changed" } : { kind: "kept", text: "Kept" };
+    return { kind: "pending", text: "Not decided" };
+  },
+
+  // shown is a line as the revised lyric will read it.
+  shown(line) {
+    return line.status === "rejected" ? musicLogic.NEEDED : line.content;
+  },
+
+  // view is what the editor shows at the current line: where it is, its
+  // section, the line itself with its status, and the lines either side as
+  // the revised lyric will read them, or "" at either end.
+  view(state) {
+    const lines = state.lines || [];
+    const i = state.current;
+    const line = lines[i];
+    if (!line) return null;
+    const near = (j) => (lines[j] ? musicLogic.shown(lines[j]) : "");
+    const section = line.sectionLabel ? line.sectionLabel.replace(/^\[|\]$/g, "") : "No section";
+    return {
+      i,
+      n: i + 1,
+      total: lines.length,
+      where: `Line ${i + 1} of ${lines.length} · ${section}`,
+      section,
+      text: line.content,
+      original: line.original || "",
+      badge: musicLogic.badge(line),
+      prev: near(i - 1),
+      next: near(i + 1),
+      first: i === 0,
+      last: i === lines.length - 1,
+      canUndo: (state.undo || []).length > 0,
+    };
+  },
+
+  // tally counts the acts as music review's summary does: kept counts the
+  // lines kept as written, apart from the changed ones.
+  tally(counts) {
+    const c = counts || {};
+    const changed = c.changed || 0;
+    return `Kept ${(c.kept || 0) - changed}, changed ${changed}, removed ${c.rejected || 0}, left ${c.pending || 0} of ${c.total || 0} lines.`;
+  },
+
+  // keyAct is the act a key asks for in the editor, or "" for none. Keys
+  // typed into a text box, or with Ctrl, Meta or Alt, are never acts.
+  keyAct(key, inBox, mods) {
+    if (inBox || mods) return "";
+    const k = String(key || "").toLowerCase();
+    return { k: "keep", c: "change", r: "remove", u: "undo", b: "back", arrowup: "back", arrowleft: "back", arrowdown: "next", arrowright: "next" }[k] || "";
+  },
+
+  // sourceText says where the lyric in the editor came from.
+  sourceText(source) {
+    const s = source || {};
+    if (s.kind === "mine") return `From My songs: ${s.title || "a song"}, version ${s.n}`;
+    if (s.kind === "edit") return `From Edit a song: songs/${s.slug}/lyric.txt`;
+    if (s.kind === "song") return `From Write a song${s.title ? `: ${s.title}` : ""}`;
+    return "Pasted here";
+  },
+
+  // targets are where the finished lyric can go, by where it came from (R7):
+  // back to its own place first, then Copy and Download always. Edit a song's
+  // save needs musicserve, so it is offered only when the helper answered.
+  targets(source, helper) {
+    const s = source || {};
+    const out = [];
+    if (s.kind === "mine" && s.id) out.push({ id: "mine", label: `Save as version ${(s.n || 0) + 1}` });
+    if (s.kind === "edit" && s.slug && helper) out.push({ id: "edit", label: "Save to lyric.txt" });
+    if (s.kind === "song") out.push({ id: "song", label: "Put it in the lyric box" });
+    out.push({ id: "copy", label: "Copy" }, { id: "download", label: "Download" });
+    return out;
+  },
+
+  // edits are the changed lines of a review, saved with its statuses so a
+  // reload puts the new words back: [index, words, pasted words] each.
+  edits(lines) {
+    const out = [];
+    (lines || []).forEach((l, i) => { if (l.original) out.push([i, l.content, l.original]); });
+    return out;
+  },
+
+  // reapply puts saved statuses and edits back on freshly parsed lines, when
+  // they still fit the lyric, and gives back whether they did.
+  reapply(lines, statuses, edits) {
+    if (!Array.isArray(statuses) || statuses.length !== lines.length) return false;
+    lines.forEach((l, i) => { l.status = statuses[i]; });
+    for (const e of edits || []) {
+      const [i, content, original] = e;
+      if (lines[i] && lines[i].content === original) { lines[i].content = content; lines[i].original = original; }
+    }
+    return true;
   },
 };
 

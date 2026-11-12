@@ -65,7 +65,7 @@
   <section id="panel-review" role="tabpanel" aria-labelledby="tab-review" hidden>
     <div class="card" id="paste-card">
       <h2><label for="lyrics-in">Paste the lyrics</label></h2>
-      <p class="small">You can start with <code>Title:</code>, <code>Genre:</code>, <code>Mood:</code> and <code>Tempo:</code> lines. Mark sections with <code>[Verse 1]</code>, <code>[Chorus]</code> and so on.</p>
+      <p class="small">You can start with <code>Title:</code>, <code>Genre:</code>, <code>Mood:</code> and <code>Tempo:</code> lines. Mark sections with <code>[Verse 1]</code>, <code>[Chorus]</code> and so on. Then go line by line: keep it, change its words, or remove it, which leaves <code>[LYRICS NEEDED]</code> to be written.</p>
       <textarea id="lyrics-in" rows="12" spellcheck="false" placeholder="Title: Lanterns&#10;&#10;[Verse 1]&#10;…"></textarea>
       <div class="row">
         <button id="read" class="primary">Start review</button>
@@ -75,44 +75,79 @@
 
     <div id="review" hidden>
       <div class="card replace-card" id="replace-card" role="status" hidden>
-        <p>A review is open, and you have kept or rejected lines in it. Replace it with the lyric from Write a song?</p>
+        <p>A review is open, and you have kept, changed or removed lines in it. Replace it with the new lyric?</p>
         <div class="row tight">
           <button id="replace" class="primary">Replace the open review</button>
           <button id="keep-open" class="ghost">Keep the open review</button>
         </div>
       </div>
       <p id="review-error" class="error" role="alert" hidden></p>
-      <div class="card meta-card">
-        <div class="meta" id="meta"></div>
-        <p class="small">Genre, mood and tempo are guesses unless the lyric has <code>Genre:</code>, <code>Mood:</code> or <code>Tempo:</code> lines. Section labels are guesses only where the lyric marks none.</p>
-      </div>
-      <div class="grid">
-        <div class="col">
-          <div class="card">
-            <div class="out-head">
-              <h2>Lines</h2>
+
+      <div class="editor">
+        <div class="card ed-card">
+          <div class="ed-head">
+            <p class="small ed-source" id="ed-source"></p>
+            <button id="reset" class="ghost">Start over</button>
+          </div>
+          <div class="progress" aria-hidden="true"><span id="bar"></span></div>
+          <p class="small" id="counts"></p>
+          <p class="ed-where" id="ed-where"></p>
+          <p class="ed-near" id="ed-prev" aria-hidden="true"></p>
+          <div class="ed-line" id="ed-line">
+            <p class="ed-text" id="ed-text" tabindex="-1" aria-live="polite"></p>
+            <p class="ed-status"><span class="badge" id="ed-badge"></span> <span class="small" id="ed-original" hidden></span></p>
+            <form id="ed-change" class="ed-change" hidden>
+              <label for="ed-words" class="small">New words for this line</label>
+              <input id="ed-words" type="text" autocomplete="off" enterkeyhint="done">
               <div class="row tight">
-                <button id="keep-rest" class="ghost">Keep the rest</button>
-                <button id="reset" class="ghost">Start over</button>
+                <button type="submit" class="primary">Save</button>
+                <button type="button" id="ed-cancel" class="ghost">Cancel</button>
+                <button type="button" id="ed-restore" class="ghost">Restore original</button>
               </div>
-            </div>
-            <div class="progress" aria-hidden="true"><span id="bar"></span></div>
-            <p class="small" id="counts"></p>
-            <p class="small keys">Keys: <kbd>K</kbd> keep · <kbd>R</kbd> reject · <kbd>B</kbd> back · <kbd>↑</kbd><kbd>↓</kbd> move</p>
-            <ol id="lines" class="lines"></ol>
+              <p id="ed-error" class="error inline" role="alert" hidden></p>
+            </form>
+          </div>
+          <p class="ed-near" id="ed-next" aria-hidden="true"></p>
+          <p class="small keys">Keys: <kbd>K</kbd> keep · <kbd>C</kbd> change · <kbd>R</kbd> remove · <kbd>U</kbd> undo · <kbd>B</kbd> or <kbd>←</kbd> back · <kbd>→</kbd> next</p>
+        </div>
+
+        <div class="actbar" id="actbar" role="toolbar" aria-label="This line">
+          <div class="actrow">
+            <button id="act-keep" class="act keep" type="button">Keep</button>
+            <button id="act-change" class="act change" type="button">Change</button>
+            <button id="act-remove" class="act remove" type="button">Remove</button>
+          </div>
+          <div class="actrow">
+            <button id="act-back" class="act" type="button">← Back</button>
+            <button id="act-undo" class="act" type="button">Undo</button>
+            <button id="act-next" class="act" type="button">Next →</button>
           </div>
         </div>
-        <div class="col out">
-          <div class="card">
-            <div class="out-head">
-              <h2>Revised lyrics <span class="hint"><code>[LYRICS NEEDED]</code> marks what to rewrite</span></h2>
-              <div class="row tight">
-                <button class="copy" data-copy="revised">Copy</button>
-                <button id="download" class="ghost" disabled>Download</button>
-              </div>
-            </div>
-            <pre id="revised" class="box tall"></pre>
+
+        <details class="card all-lines" id="all-lines">
+          <summary>See all lines</summary>
+          <p class="small">Choose a line to go to it.</p>
+          <ol id="lines" class="lines"></ol>
+          <div class="row"><button id="keep-rest" class="ghost">Keep the rest</button></div>
+        </details>
+
+        <div class="card result" id="finish-card">
+          <div class="out-head">
+            <h2>Revised lyrics <span class="hint">a removed line reads <code>[LYRICS NEEDED]</code></span></h2>
           </div>
+          <p class="small" id="finish-tally"></p>
+          <p class="small" id="finish-needed"></p>
+          <div class="row" id="finish-targets">
+            <button class="copy" data-copy="revised">Copy</button>
+            <button id="download" class="ghost" disabled>Download</button>
+          </div>
+          <p class="small" id="finish-said" role="status" tabindex="-1"></p>
+          <pre id="revised" class="box tall"></pre>
+        </div>
+
+        <div class="card meta-card">
+          <div class="meta" id="meta"></div>
+          <p class="small">Genre, mood and tempo are guesses unless the lyric has <code>Genre:</code>, <code>Mood:</code> or <code>Tempo:</code> lines. Section labels are guesses only where the lyric marks none.</p>
         </div>
       </div>
     </div>
@@ -138,6 +173,7 @@
         <div class="row">
           <button id="edit-save" class="primary" type="button">Save lyric.txt</button>
           <button id="edit-revert" class="ghost" type="button">Undo my changes</button>
+          <button id="edit-review" class="ghost" type="button">Review line by line</button>
           <span id="edit-said" class="small" role="status" tabindex="-1"></span>
         </div>
         <p class="small">Saving never overwrites: the lyric it replaces is kept beside it as <code>lyric-prev-1.txt</code>, then <code>lyric-prev-2.txt</code>, and so on. Nothing goes to Suno.</p>

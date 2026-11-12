@@ -1,6 +1,6 @@
 // The page around musicweb. All the music logic is the Go tool's own,
 // compiled to WebAssembly (cmd/musicweb); this file only draws the page,
-// calls musicParse, musicRebuild and musicLibrary, hands musicSong and
+// calls musicParse, musicRevise and musicLibrary, hands musicSong and
 // musicCheck to songflow.js, and keeps the viewer's choices in this browser.
 // The decisions it makes without the DOM are in logic.js, which node tests.
 "use strict";
@@ -25,6 +25,7 @@ const store = {
 function el(tag, attrs, ...children) {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null) continue;
     if (k === "class") n.className = v;
     else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
     else n.setAttribute(k, v);
@@ -101,11 +102,12 @@ function checkLyric(node) {
   const name = flow.structure().name;
   const o = flow.outputs();
   const suno = musicLogic.sunoLyric(lyric, res, o && o.brief);
-  if (suno.note) { node.replaceChildren(el("p", { class: "small check-miss", role: "status" }, suno.note)); return; }
+  if (suno.note && !suno.needed) { node.replaceChildren(el("p", { class: "small check-miss", role: "status" }, suno.note)); return; }
   const status = res.missing.length
     ? el("p", { class: "small check-miss", role: "status" },
       `Missing ${res.missing.map((s) => `[${s}]`).join(", ")} for ${name}. Ask your AI for them, or write them in. Suno's Lyrics box waits until every section is there.`)
-    : el("p", { class: "small check-ok", role: "status" }, `✓ Every section of ${name} is there.`);
+    : suno.needed ? el("p", { class: "small check-miss", role: "status" }, `Every section of ${name} is there. ${suno.note}`)
+      : el("p", { class: "small check-ok", role: "status" }, `✓ Every section of ${name} is there.`);
   const lyricBox = suno.text
     ? output("out-suno-lyric", "Suno: Lyrics box", "paste the finished lyric here, in Custom mode", suno.text, true, "the finished lyric, for Suno's Lyrics box")
     : null;
@@ -114,23 +116,9 @@ function checkLyric(node) {
       el("h3", {}, "Song sheet, not for Suno", el("span", { class: "hint" }, "the style and the lyric together, as music song check writes it, to keep or to review")),
       el("div", { class: "row tight" },
         el("button", { class: "copy", type: "button", "data-copy": "out-sheet", "aria-label": "Copy the song sheet" }, "Copy"),
-        el("button", { class: "ghost", type: "button", onclick: () => sendToReview(res.sheet) }, "Review these lyrics"))),
+        el("button", { class: "ghost", type: "button", onclick: () => sendToReview(lyric, { kind: "song", title: flow.state().title || "" }) }, "Review line by line"))),
     el("pre", { id: "out-sheet", class: "box tall" }, res.sheet));
   node.replaceChildren(status, lyricBox || "", sheet);
-}
-
-// sendToReview opens the lyric in Review lyrics. A review with a keep or a
-// reject in it is never discarded: Review offers to replace it, on the page.
-function sendToReview(text) {
-  showTab("review", true);
-  if (!$("review").hidden && !musicLogic.mayReplace(review.lines)) {
-    review.waiting = text;
-    $("replace-card").hidden = false;
-    $("replace").focus();
-    return;
-  }
-  $("lyrics-in").value = text;
-  startReview();
 }
 
 // drawEnd draws the conversation's end into node: the answers that decide the
@@ -340,19 +328,31 @@ function initLook() {
 
 // ---- review lyrics ----
 
-// waiting is a lyric sent from Write a song while a review with decisions in
-// it is open; rebuilt is the last rebuild, which Download saves.
-const review = { lines: [], slug: "", current: 0, waiting: "", rebuilt: null };
+// Review lyrics edits a lyric one line at a time (WO-01M78DENQEB904PB2NZ7XMG3S8):
+// keep a line, change its words, or remove it, which leaves [LYRICS NEEDED]
+// to be written. It is built for a phone first: one line large, the lines
+// either side faint, and the acts in a bar at the foot of the screen.
+// musicLogic holds every decision; this section draws them. source is where
+// the lyric came from, and where the finish card offers to put it back;
+// waiting is a lyric sent while a review with acts in it is open; done is
+// set once the revision went back where it came from, so a new lyric may
+// replace it without asking.
+const review = {
+  state: { lines: [], current: 0, undo: [] },
+  slug: "", source: { kind: "paste" }, waiting: null, rebuilt: null, changing: false, done: false,
+};
 
 function saveReview() {
   store.set("music.review", {
     text: $("lyrics-in").value,
-    statuses: review.lines.map((l) => l.status),
-    current: review.current,
+    statuses: review.state.lines.map((l) => l.status),
+    edits: musicLogic.edits(review.state.lines),
+    current: review.state.current,
+    source: review.source,
   });
 }
 
-function startReview(statuses, current) {
+function startReview(saved) {
   const res = JSON.parse(musicParse($("lyrics-in").value));
   const place = musicLogic.errorPlace(!$("review").hidden);
   for (const id of ["parse-error", "review-error"]) {
@@ -361,14 +361,14 @@ function startReview(statuses, current) {
   }
   if (res.error) return false;
   $("replace-card").hidden = true;
-  review.waiting = "";
+  review.waiting = null;
+  review.changing = false;
+  review.done = false;
 
-  review.lines = res.result.lines;
-  review.slug = res.slug || "untitled-song";
-  if (statuses && statuses.length === review.lines.length) {
-    review.lines.forEach((l, i) => { l.status = statuses[i]; });
-  }
-  review.current = Math.min(current || 0, review.lines.length - 1);
+  const lines = res.result.lines;
+  const back = saved && musicLogic.reapply(lines, saved.statuses, saved.edits);
+  review.state = musicLogic.move({ lines, current: 0, undo: [] }, back ? saved.current || 0 : 0);
+  review.slug = (review.source && review.source.slug) || res.slug || "untitled-song";
 
   const m = res.result.metadata;
   $("meta").replaceChildren(...[["Title", m.title], ["Genre", m.genre], ["Mood", m.mood], ["Tempo", m.tempo], ["Style", m.style]]
@@ -377,87 +377,250 @@ function startReview(statuses, current) {
 
   $("paste-card").hidden = true;
   $("review").hidden = false;
-  drawLines();
+  drawEditor();
   return true;
 }
 
-// drawLines draws the review's lines. The current line is the one in the Tab
-// order; Enter or Space on a focused line selects it.
-function drawLines() {
-  const ol = $("lines");
-  const hadFocus = ol.contains(document.activeElement);
-  ol.replaceChildren();
-  review.lines.forEach((l, i) => {
-    if (i === 0 || l.sectionLabel !== review.lines[i - 1].sectionLabel) {
-      ol.append(el("li", { class: "section" }, l.sectionLabel || "(no section)"));
-    }
-    const select = () => { review.current = i; drawLines(); };
-    const li = el("li", {
-      class: `line ${l.status}${i === review.current ? " current" : ""}`, "data-i": i,
-      tabindex: i === review.current ? "0" : "-1", "aria-current": String(i === review.current),
-      onclick: select,
-      onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); select(); } },
-    },
-      el("span", { class: "n" }, String(l.lineNumber)),
-      el("span", { class: "text" }, l.content),
-      el("span", { class: "acts" },
-        el("button", { class: "k", title: "Keep (K)", onclick: (e) => { e.stopPropagation(); decide(i, "kept"); } }, "Keep"),
-        el("button", { class: "r", title: "Reject (R)", onclick: (e) => { e.stopPropagation(); decide(i, "rejected"); } }, "Reject")));
-    ol.append(li);
-  });
-  const cur = ol.querySelector(".current");
-  if (cur && !isVisible(cur)) cur.scrollIntoView({ block: "nearest" });
-  if (cur && hadFocus) cur.focus();
+// SHORT is a status as the list of every line says it.
+const SHORT = { kept: "Kept", changed: "Changed", rejected: "Removed", pending: "" };
+
+// drawEditor draws the line the editor is on, the list of every line, the
+// bar's buttons and the finish card.
+function drawEditor() {
+  const s = review.state;
+  const v = musicLogic.view(s);
+  if (!v) return;
+  $("ed-source").textContent = musicLogic.sourceText(review.source);
+  $("ed-where").textContent = v.where;
+  $("ed-prev").textContent = v.prev;
+  $("ed-next").textContent = v.next;
+  $("ed-line").dataset.status = v.badge.kind;
+  $("ed-text").textContent = v.text;
+  $("ed-badge").textContent = v.badge.text;
+  $("ed-badge").className = `badge ${v.badge.kind}`;
+  $("ed-original").hidden = !v.original;
+  $("ed-original").textContent = v.original ? `Pasted as: ${v.original}` : "";
+
+  $("ed-change").hidden = !review.changing;
+  $("actbar").hidden = review.changing;
+  $("ed-restore").disabled = !v.original;
+  $("act-back").disabled = v.first;
+  $("act-next").disabled = v.last;
+  $("act-undo").disabled = !v.canUndo;
+  $("act-keep").setAttribute("aria-pressed", String(v.badge.kind === "kept" || v.badge.kind === "changed"));
+  $("act-remove").setAttribute("aria-pressed", String(v.badge.kind === "rejected"));
+
+  drawList();
   rebuild();
   saveReview();
 }
 
-function isVisible(node) {
-  const r = node.getBoundingClientRect();
-  return r.top >= 70 && r.bottom <= window.innerHeight;
-}
-
-function decide(i, status) {
-  review.lines[i].status = status;
-  review.current = Math.min(i + 1, review.lines.length - 1);
-  drawLines();
+// drawList draws every line, each a button that goes to it.
+function drawList() {
+  const ol = $("lines");
+  const lines = review.state.lines;
+  ol.replaceChildren();
+  lines.forEach((l, i) => {
+    if (i === 0 || l.sectionLabel !== lines[i - 1].sectionLabel) {
+      ol.append(el("li", { class: "section" }, l.sectionLabel || "(no section)"));
+    }
+    const kind = musicLogic.badge(l).kind;
+    const here = i === review.state.current;
+    ol.append(el("li", { class: `line ${kind}${here ? " current" : ""}` },
+      el("button", {
+        type: "button", class: "line-go", "aria-current": here ? "true" : null,
+        onclick: () => { go(i); $("ed-text").focus(); },
+      },
+      el("span", { class: "n" }, String(i + 1)),
+      el("span", { class: "text" }, l.content),
+      el("span", { class: "tag" }, SHORT[kind]))));
+  });
 }
 
 function rebuild() {
-  const res = JSON.parse(musicRebuild(JSON.stringify(review.lines)));
+  const res = JSON.parse(musicRevise(JSON.stringify(review.state.lines)));
   review.rebuilt = res;
   $("download").disabled = !musicLogic.canDownload(res);
   if (res.error) { $("revised").textContent = res.error; return; }
   $("revised").textContent = res.revised;
   const c = res.counts;
   $("bar").style.width = c.progress + "%";
-  $("counts").textContent = `Kept ${c.kept}, rejected ${c.rejected}, left ${c.pending} of ${c.total} lines.`;
+  const tally = musicLogic.tally(c);
+  $("counts").textContent = tally;
+  $("finish-tally").textContent = tally;
+  const n = musicLogic.needed(res.revised);
+  const left = c.pending ? ` ${c.pending} line${c.pending === 1 ? " is" : "s are"} not decided, and stay${c.pending === 1 ? "s" : ""} as written.` : "";
+  $("finish-needed").textContent = (n ? musicLogic.neededText(n) : "No line needs words.") + left;
+  drawTargets();
+}
+
+// drawTargets puts the buttons that send the lyric back where it came from
+// before Copy and Download.
+function drawTargets() {
+  const row = $("finish-targets");
+  for (const b of row.querySelectorAll(".target")) b.remove();
+  const ok = review.rebuilt && !review.rebuilt.error;
+  const first = row.firstChild;
+  // Once the lyric went back, the button waits for another act, so a second
+  // tap cannot save the same lyric again.
+  if (review.done) return;
+  for (const t of musicLogic.targets(review.source, !!helperState.hello)) {
+    if (t.id === "copy" || t.id === "download") continue;
+    row.insertBefore(el("button", { class: "primary target", type: "button", disabled: ok ? null : "", onclick: () => finishTo(t.id) }, t.label), first);
+  }
+}
+
+function finishSay(ok, text, tab, label) {
+  const p = $("finish-said");
+  p.className = "small " + (ok ? "check-ok" : "check-miss");
+  p.replaceChildren(text, tab ? " " : "", tab ? el("button", { class: "ghost", type: "button", onclick: () => showTab(tab, true) }, label) : "");
+  p.focus();
+}
+
+// finishTo sends the revised lyric back where it came from (R7).
+async function finishTo(id) {
+  const res = review.rebuilt;
+  if (!res || res.error) return;
+  const text = res.revised;
+  const s = review.source || {};
+  if (id === "mine") {
+    if (!mine.api || !mine.api.signedIn()) { finishSay(false, "Sign in to My songs first. Nothing was saved.", "mine", "Open My songs"); return; }
+    const r = await mine.api.save(s.id, { lyric: text, answers: s.answers || {}, style: s.style || "", structure: s.structure || "", note: "reviewed line by line" });
+    if (!r.ok) { finishSay(false, `${r.error} Nothing was saved.`); return; }
+    review.source = { ...s, n: r.version.n };
+    review.done = true;
+    saveReview();
+    drawTargets();
+    if (mine.song && mine.song.id === s.id) await mineOpen(s.id, true);
+    mineSay(true, `Saved as version ${r.version.n}, reviewed line by line.`);
+    mineDraw();
+    finishSay(true, `Saved to My songs as version ${r.version.n}.`, "mine", "Open My songs");
+  } else if (id === "edit") {
+    const r = await musicHelper.save(fetchFn, s.slug, text);
+    const said = musicHelper.saved(r);
+    if (said.ok) {
+      review.done = true;
+      if (edit.song && edit.song.slug === s.slug) editDraw(r, true);
+    }
+    finishSay(said.ok, said.text, said.ok ? "edit" : "", "Open Edit a song");
+  } else if (id === "song") {
+    flow.setLyric(text);
+    chatApi.draw();
+    review.done = true;
+    finishSay(true, "It is in Write a song's lyric box, where the check runs again.", "song", "Open Write a song");
+  }
+  drawTargets();
+}
+
+// go moves the editor to line i.
+function go(i) {
+  review.state = musicLogic.move(review.state, i);
+  review.changing = false;
+  drawEditor();
+}
+
+// doAct does what a bar button or key asks: an act on the line, Undo, or a
+// move. Change opens the words in place instead.
+function doAct(a) {
+  if (a === "back") return go(review.state.current - 1);
+  if (a === "next") return go(review.state.current + 1);
+  if (a === "undo") {
+    review.state = musicLogic.undo(review.state);
+    review.changing = false;
+    review.done = false;
+    return drawEditor();
+  }
+  if (a === "change") {
+    review.changing = true;
+    drawEditor();
+    $("ed-error").hidden = true;
+    const w = $("ed-words");
+    w.value = review.state.lines[review.state.current].content;
+    w.focus();
+    w.select();
+    return;
+  }
+  const r = musicLogic.act(review.state, a);
+  if (r.error) return;
+  review.state = r.state;
+  review.done = false;
+  drawEditor();
+}
+
+// changeTo saves the words in the box, or says why it cannot.
+function changeTo(act) {
+  const r = musicLogic.act(review.state, act, $("ed-words").value);
+  if (r.error) {
+    $("ed-error").hidden = false;
+    $("ed-error").textContent = r.error;
+    return;
+  }
+  review.state = r.state;
+  review.changing = false;
+  review.done = false;
+  drawEditor();
+  $("ed-text").focus();
+}
+
+// sendToReview opens a lyric in Review lyrics, remembering where it came
+// from. A review with an act in it is never discarded: Review offers to
+// replace it, on the page, unless it already went back where it came from.
+function sendToReview(text, source) {
+  showTab("review", true);
+  if (!$("review").hidden && !review.done && !musicLogic.mayReplace(review.state.lines)) {
+    review.waiting = { text, source: source || { kind: "paste" } };
+    $("replace-card").hidden = false;
+    $("replace").focus();
+    return;
+  }
+  $("lyrics-in").value = text;
+  review.source = source || { kind: "paste" };
+  $("finish-said").replaceChildren();
+  startReview();
 }
 
 function initReview() {
-  $("read").addEventListener("click", () => startReview());
+  $("read").addEventListener("click", () => { review.source = { kind: "paste" }; startReview(); });
   $("reset").addEventListener("click", () => {
-    review.lines = [];
+    review.state = { lines: [], current: 0, undo: [] };
     review.rebuilt = null;
+    review.changing = false;
+    review.source = { kind: "paste" };
     $("download").disabled = true;
     $("review").hidden = true;
     $("replace-card").hidden = true;
     $("review-error").hidden = true;
     $("paste-card").hidden = false;
+    $("finish-said").replaceChildren();
     saveReview();
   });
   $("replace").addEventListener("click", () => {
-    $("lyrics-in").value = review.waiting;
+    const w = review.waiting || { text: "", source: { kind: "paste" } };
+    $("lyrics-in").value = w.text;
+    review.source = w.source;
+    $("finish-said").replaceChildren();
     startReview();
   });
   $("keep-open").addEventListener("click", () => {
-    review.waiting = "";
+    review.waiting = null;
     $("replace-card").hidden = true;
   });
   $("keep-rest").addEventListener("click", () => {
-    review.lines.forEach((l) => { if (l.status === "pending") l.status = "kept"; });
-    drawLines();
+    review.state = musicLogic.keepRest(review.state);
+    review.done = false;
+    drawEditor();
   });
+  for (const [id, a] of [["act-keep", "keep"], ["act-change", "change"], ["act-remove", "remove"], ["act-back", "back"], ["act-undo", "undo"], ["act-next", "next"]]) {
+    $(id).addEventListener("click", () => doAct(a));
+  }
+  $("ed-change").addEventListener("submit", (e) => { e.preventDefault(); changeTo("change"); });
+  $("ed-cancel").addEventListener("click", () => { review.changing = false; drawEditor(); $("act-change").focus(); });
+  $("ed-restore").addEventListener("click", () => changeTo("restore"));
+  $("ed-words").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); $("ed-cancel").click(); }
+  });
+  // A refusal stands only until the words change.
+  $("ed-words").addEventListener("input", () => { $("ed-error").hidden = true; });
   $("download").addEventListener("click", () => {
     if (!musicLogic.canDownload(review.rebuilt)) return;
     const blob = new Blob([review.rebuilt.revised + "\n"], { type: "text/plain" });
@@ -468,21 +631,20 @@ function initReview() {
   });
 
   document.addEventListener("keydown", (e) => {
-    if ($("panel-review").hidden || $("review").hidden || !review.lines.length) return;
-    if (e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) return;
-    const key = e.key.toLowerCase();
-    if (key === "k") decide(review.current, "kept");
-    else if (key === "r") decide(review.current, "rejected");
-    else if (key === "b" || key === "arrowup") { review.current = Math.max(0, review.current - 1); drawLines(); }
-    else if (key === "arrowdown") { review.current = Math.min(review.lines.length - 1, review.current + 1); drawLines(); }
-    else return;
+    if (e.defaultPrevented || $("panel-review").hidden || $("review").hidden || review.changing || !review.state.lines.length) return;
+    const a = document.activeElement;
+    const inBox = !!a && (/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.isContentEditable);
+    const act = musicLogic.keyAct(e.key, inBox, e.ctrlKey || e.metaKey || e.altKey);
+    if (!act) return;
     e.preventDefault();
+    doAct(act);
   });
 
   const saved = store.get("music.review");
   if (saved && saved.text) {
     $("lyrics-in").value = saved.text;
-    if (saved.statuses && saved.statuses.length) startReview(saved.statuses, saved.current);
+    review.source = saved.source || { kind: "paste" };
+    if (saved.statuses && saved.statuses.length) startReview(saved);
   }
   $("lyrics-in").addEventListener("input", () => saveReview());
 }
@@ -523,7 +685,9 @@ function editDraw(o, saved) {
   $("edit-previous").textContent = (o.previous || []).length ? `Kept before: ${o.previous.join(", ")}.` : "";
   const outs = [];
   if (saved) {
-    outs.push(output("out-edit-lyric", "Suno: Lyrics box", "paste the saved lyric here, in Custom mode", (o.lyric || "").trim(), true, "the saved lyric, for Suno's Lyrics box"));
+    const n = musicLogic.needed(o.lyric);
+    outs.push(n ? el("p", { class: "small check-miss", role: "status" }, musicLogic.neededText(n))
+      : output("out-edit-lyric", "Suno: Lyrics box", "paste the saved lyric here, in Custom mode", (o.lyric || "").trim(), true, "the saved lyric, for Suno's Lyrics box"));
     outs.push(output("out-edit-style", "Suno: Style box", `${o.folder}/style.txt, paste it into Suno's Style box`, o.style, false, "the style, for Suno's Style box"));
   }
   $("edit-outputs").replaceChildren(...outs);
@@ -579,6 +743,10 @@ async function initEdit() {
     edit.timer = setTimeout(editShow, 150);
   });
   $("edit-save").addEventListener("click", editSave);
+  $("edit-review").addEventListener("click", () => {
+    if (!edit.song) return;
+    sendToReview($("edit-lyric").value, { kind: "edit", slug: edit.song.slug, title: edit.song.title });
+  });
   $("edit-revert").addEventListener("click", () => {
     if (!edit.song) return;
     $("edit-lyric").value = edit.song.lyric || "";
@@ -601,7 +769,7 @@ async function initEdit() {
 // working page.
 const mine = {
   api: null, songs: [], song: null, versions: [], box: "", note: "", signEmail: "", signCode: "",
-  said: null, compare: null, lines: null, confirm: "", renaming: false, loading: false, kept: null, writeSaid: "",
+  said: null, compare: null, confirm: "", renaming: false, loading: false, kept: null, writeSaid: "",
 };
 
 const when = (iso) => {
@@ -704,7 +872,6 @@ async function mineOpen(id, quiet) {
   mine.box = mine.versions.length ? mine.versions[0].lyric : "";
   mine.note = "";
   mine.compare = null;
-  mine.lines = null;
   mine.confirm = "";
   mine.renaming = false;
   mine.kept = null;
@@ -838,9 +1005,8 @@ function mineEditor() {
     el("div", { class: "row" },
       el("button", { id: "mine-save", class: "primary", type: "button", onclick: () => mineSave(mine.note) }, `Save as version ${s.latest_n + 1}`),
       el("button", { id: "mine-undo", class: "ghost", type: "button", onclick: () => { mine.box = latest ? latest.lyric : ""; mineDraw(); } }, "Undo my changes"),
-      el("button", { class: "ghost", type: "button", "aria-expanded": String(!!mine.lines), onclick: () => mineLinesToggle() }, "Keep or reject lines")),
-    mineSaid(),
-    mine.lines ? mineLines() : null);
+      el("button", { class: "ghost", type: "button", onclick: () => mineReview() }, "Review line by line")),
+    mineSaid());
 
   const finished = s.finished_n ? mine.versions.find((v) => v.n === s.finished_n) : null;
   const finish = el("div", { class: "card result" },
@@ -931,42 +1097,17 @@ function mineDiff(v) {
     same ? null : el("pre", { class: "box diff" }, ...rows.map((r) => el("span", { class: r.op === "+" ? "add" : r.op === "-" ? "del" : "same" }, `${r.op === " " ? " " : r.op === "+" ? "+" : "−"} ${r.text}\n`))));
 }
 
-// mineLinesToggle opens the box's lines to keep or reject, as Review lyrics
-// does; the revision goes back into the box, where it can be typed over.
-function mineLinesToggle() {
-  if (mine.lines) { mine.lines = null; mineDraw(); return; }
-  const res = JSON.parse(musicParse(mine.box));
-  if (res.error) { mineSay(false, res.error); mineDraw(); return; }
-  mine.lines = res.result.lines;
-  mineDraw();
-}
-
-function mineLines() {
-  const ol = el("ol", { class: "lines" });
-  mine.lines.forEach((l, i) => {
-    if (i === 0 || l.sectionLabel !== mine.lines[i - 1].sectionLabel) ol.append(el("li", { class: "section" }, l.sectionLabel || "(no section)"));
-    const set = (st) => { l.status = l.status === st ? "pending" : st; mineDraw(); };
-    ol.append(el("li", { class: `line ${l.status}` },
-      el("span", { class: "n" }, String(l.lineNumber)),
-      el("span", { class: "text" }, l.content),
-      el("span", { class: "acts" },
-        el("button", { class: "k", type: "button", "aria-pressed": String(l.status === "kept"), onclick: () => set("kept") }, "Keep"),
-        el("button", { class: "r", type: "button", "aria-pressed": String(l.status === "rejected"), onclick: () => set("rejected") }, "Reject"))));
+// mineReview opens the box in Review lyrics, one line at a time, to keep,
+// change or remove each line; its finish card saves the revision as this
+// song's next version (WO-01M78DENQEB904PB2NZ7XMG3S8 R7).
+function mineReview() {
+  const s = mine.song;
+  const latest = mineLatest();
+  if (!mine.box.trim()) { mineSay(false, "The box has no lyric to review."); mineDraw(); mineFocusSaid(); return; }
+  sendToReview(mine.box, {
+    kind: "mine", id: s.id, title: s.title, n: s.latest_n, answers: mineAnswers(),
+    style: latest ? latest.style : "", structure: latest ? latest.structure : mineAnswers().structure,
   });
-  const rejected = mine.lines.filter((l) => l.status === "rejected").length;
-  return el("div", { class: "card mine-lines" },
-    el("p", { class: "small" }, "Reject a line and the revision marks it [LYRICS NEEDED], for you or your AI to rewrite. Lines you leave are kept."),
-    ol,
-    el("div", { class: "row" },
-      el("button", { class: "primary", type: "button", disabled: rejected ? null : "", onclick: () => {
-        const lines = mine.lines.map((l) => ({ ...l, status: l.status === "rejected" ? "rejected" : "kept" }));
-        const r = JSON.parse(musicRebuild(JSON.stringify(lines)));
-        if (r.error) { mineSay(false, r.error); mineDraw(); return; }
-        mine.box = r.revised;
-        mine.lines = null;
-        mineSay(true, `${rejected} line${rejected === 1 ? " is" : "s are"} marked [LYRICS NEEDED] in the box. Save it as a version when it is right.`);
-        mineDraw();
-      } }, `Put the revision in the box (${rejected} rejected)`)));
 }
 
 // mineToWrite opens the song in Write a song, to change its answers there;
