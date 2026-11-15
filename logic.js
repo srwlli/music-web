@@ -496,6 +496,113 @@ const musicLogic = {
     }
     return true;
   },
+
+  // A saved song always opens in Review, and its review resumes
+  // (WO-01M7EWJPHKPYH29AN3F8J2T5J7). Every review is kept on a shelf in this
+  // browser, keyed by where its lyric came from and the lyric itself, so a
+  // song opened again with the same lyric picks up where it was left, and a
+  // new version, being a different lyric, starts fresh.
+
+  // SHELF_SIZE is how many reviews the shelf keeps, the newest first.
+  SHELF_SIZE: 20,
+
+  // textHash is a short hash of a lyric: FNV-1a over its UTF-16 code units,
+  // eight hex digits. It names a lyric on the shelf; resumeFor still compares
+  // the text itself.
+  textHash(text) {
+    let h = 0x811c9dc5;
+    const s = String(text || "");
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
+    return h.toString(16).padStart(8, "0");
+  },
+
+  // isSaved reports whether a lyric came from a saved song: a My songs
+  // version or a song folder under songs/. A saved song always opens.
+  isSaved(source) {
+    const s = source || {};
+    return (s.kind === "mine" && !!s.id) || (s.kind === "edit" && !!s.slug);
+  },
+
+  // reviewKey is where a review is kept on the shelf: mine:<id>:<n>,
+  // edit:<slug>, song or paste, then the lyric's hash.
+  reviewKey(source, text) {
+    const s = source || {};
+    const h = musicLogic.textHash(text);
+    if (s.kind === "mine" && s.id) return `mine:${s.id}:${s.n || 0}:${h}`;
+    if (s.kind === "edit" && s.slug) return `edit:${s.slug}:${h}`;
+    if (s.kind === "song") return `song:${h}`;
+    return `paste:${h}`;
+  },
+
+  // worthKeeping reports whether a review has anything to resume: an act on
+  // a line, or a place past the first line.
+  worthKeeping(entry) {
+    if (!entry) return false;
+    return (entry.statuses || []).some((s) => s && s !== "pending") || (entry.current || 0) > 0;
+  },
+
+  // shelve gives back the shelf with entry kept under key, or taken off when
+  // entry is null or has nothing to resume, keeping the newest SHELF_SIZE by
+  // their at. It never changes the shelf it was given.
+  shelve(shelf, key, entry, size) {
+    const out = shelf && typeof shelf === "object" && !Array.isArray(shelf) ? { ...shelf } : {};
+    delete out[key];
+    if (musicLogic.worthKeeping(entry)) out[key] = entry;
+    const keys = Object.keys(out).sort((a, b) => String(out[b].at || "").localeCompare(String(out[a].at || "")));
+    for (const k of keys.slice(size || musicLogic.SHELF_SIZE)) delete out[k];
+    return out;
+  },
+
+  // resumeFor is the shelved review to resume for a lyric opened from
+  // source, or null: only one kept for this very lyric from the same place.
+  resumeFor(shelf, source, text) {
+    const e = shelf && shelf[musicLogic.reviewKey(source, text)];
+    return e && e.text === text && musicLogic.worthKeeping(e) ? e : null;
+  },
+
+  // pickValue is the list's value for the song a review came from, or "".
+  pickValue(source) {
+    const s = source || {};
+    if (s.kind === "mine" && s.id) return `mine:${s.id}`;
+    if (s.kind === "edit" && s.slug) return `edit:${s.slug}`;
+    return "";
+  },
+
+  // parsePick reads a value of the list back: { kind, id }, or null.
+  parsePick(value) {
+    const m = /^(mine|edit):(.+)$/.exec(String(value || ""));
+    return m ? { kind: m[1], id: m[2] } : null;
+  },
+
+  // savedOptions is Open a saved song's list. mine is whether My songs is on
+  // the page, signedIn whether the Operator is signed in to it, songs its
+  // songs; helper is whether musicserve answered, folders its songs/. show
+  // says whether the card is shown at all, count how many songs it lists,
+  // and signIn whether it offers the way to My songs to sign in.
+  savedOptions({ mine, signedIn, songs, helper, folders } = {}) {
+    const groups = [];
+    if (mine && signedIn && (songs || []).length) {
+      groups.push({ label: "My songs", items: songs.map((s) => ({
+        value: `mine:${s.id}`,
+        label: `${s.title} · version ${s.latest_n}${s.finished_n && s.finished_n === s.latest_n ? " · finished" : ""}`,
+      })) });
+    }
+    if (helper && (folders || []).length) {
+      groups.push({ label: "songs/ on this machine", items: folders.map((f) => ({
+        value: `edit:${f.slug}`,
+        label: f.stage ? `${f.title} (${f.stage})` : f.title,
+      })) });
+    }
+    const count = groups.reduce((n, g) => n + g.items.length, 0);
+    const signIn = !!mine && !signedIn;
+    const hint = count ? "Choose one: its latest lyric opens below, line by line, where you left it."
+      : signIn ? "Sign in under My songs, and your songs are listed here."
+        : "No saved songs yet. A song is saved from Write a song.";
+    return { show: !!mine || !!helper, groups, count, signIn, hint };
+  },
 };
 
 globalThis.musicLogic = musicLogic;

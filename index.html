@@ -63,6 +63,16 @@
   </section>
 
   <section id="panel-review" role="tabpanel" aria-labelledby="tab-review" hidden>
+    <div class="card saved-card" id="saved-card" hidden>
+      <h2><label for="saved-pick">Open a saved song</label></h2>
+      <p id="saved-hint" class="small"></p>
+      <div class="row">
+        <select id="saved-pick"><option value="">Choose a song…</option></select>
+        <button id="saved-mine" class="ghost" type="button" hidden>Open My songs</button>
+      </div>
+      <p id="saved-said" class="error" role="alert" hidden></p>
+    </div>
+
     <div class="card" id="paste-card">
       <h2><label for="lyrics-in">Paste the lyrics</label></h2>
       <p class="small">You can start with <code>Title:</code>, <code>Genre:</code>, <code>Mood:</code> and <code>Tempo:</code> lines. Mark sections with <code>[Verse 1]</code>, <code>[Chorus]</code> and so on. Then go line by line: keep it, change its words, or remove it, which leaves <code>[LYRICS NEEDED]</code> to be written.</p>

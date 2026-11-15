@@ -342,14 +342,35 @@ const review = {
   slug: "", source: { kind: "paste" }, waiting: null, rebuilt: null, changing: false, done: false,
 };
 
+// SHELF is every review this browser keeps, by musicLogic.reviewKey, so a
+// song opened again picks up where it was left (WO-01M7EWJPHKPYH29AN3F8J2T5J7).
+const SHELF = "music.reviews";
+
 function saveReview() {
-  store.set("music.review", {
+  const entry = {
     text: $("lyrics-in").value,
     statuses: review.state.lines.map((l) => l.status),
     edits: musicLogic.edits(review.state.lines),
     current: review.state.current,
     source: review.source,
-  });
+    at: new Date().toISOString(),
+  };
+  store.set("music.review", entry);
+  if (!$("review").hidden && review.state.lines.length) {
+    store.set(SHELF, musicLogic.shelve(store.get(SHELF), musicLogic.reviewKey(review.source, entry.text), entry));
+  }
+}
+
+// openReview opens a lyric in the editor from source, resuming the review
+// kept for that very lyric from there, if there is one. The review that was
+// open is on the shelf already: every draw keeps it.
+function openReview(text, source) {
+  $("lyrics-in").value = text;
+  review.source = source || { kind: "paste" };
+  $("finish-said").replaceChildren();
+  const ok = startReview(musicLogic.resumeFor(store.get(SHELF), review.source, text));
+  drawSaved();
+  return ok;
 }
 
 function startReview(saved) {
@@ -491,7 +512,8 @@ async function finishTo(id) {
     review.done = true;
     saveReview();
     drawTargets();
-    if (mine.song && mine.song.id === s.id) await mineOpen(s.id, true);
+    // The list, here and in Open a saved song, shows the new version.
+    await mineLoad(mine.api.openId());
     mineSay(true, `Saved as version ${r.version.n}, reviewed line by line.`);
     mineDraw();
     finishSay(true, `Saved to My songs as version ${r.version.n}.`, "mine", "Open My songs");
@@ -565,7 +587,10 @@ function changeTo(act) {
 // sendToReview opens a lyric in Review lyrics, remembering where it came
 // from. A review with an act in it is never discarded: Review offers to
 // replace it, on the page, unless it already went back where it came from.
+// A saved song never asks: it always opens, and the open review stays on
+// the shelf (openSaved).
 function sendToReview(text, source) {
+  if (musicLogic.isSaved(source)) return openSaved(text, source, true);
   showTab("review", true);
   if (!$("review").hidden && !review.done && !musicLogic.mayReplace(review.state.lines)) {
     review.waiting = { text, source: source || { kind: "paste" } };
@@ -573,15 +598,93 @@ function sendToReview(text, source) {
     $("replace").focus();
     return;
   }
-  $("lyrics-in").value = text;
-  review.source = source || { kind: "paste" };
-  $("finish-said").replaceChildren();
-  startReview();
+  openReview(text, source);
+}
+
+// openSaved always opens a saved song's lyric in Review, resuming its
+// review when the lyric is the one it was left at (D1, D2). show selects the
+// tab; without it Review is filled behind the tab the Operator is on.
+function openSaved(text, source, show) {
+  if (show) showTab("review", true);
+  const ok = openReview(text, source);
+  if (ok && show) $("ed-text").focus();
+  return ok;
+}
+
+// ---- open a saved song ----
+
+// picks is what Open a saved song lists from musicserve: the songs/ folders.
+// My songs' songs are mine.songs. seq drops an answer a later choice
+// overtook.
+const picks = { folders: [], seq: 0 };
+
+function savedSay(text) {
+  $("saved-said").hidden = !text;
+  $("saved-said").textContent = text || "";
+}
+
+// drawSaved draws the list from what My songs and musicserve hold now, and
+// shows the song open in the editor as chosen.
+function drawSaved() {
+  const o = musicLogic.savedOptions({
+    mine: !!mine.api, signedIn: !!mine.api && mine.api.signedIn(), songs: mine.songs,
+    helper: !!helperState.hello, folders: picks.folders,
+  });
+  $("saved-card").hidden = !o.show;
+  $("saved-hint").textContent = o.hint;
+  $("saved-mine").hidden = !o.signIn;
+  const pick = $("saved-pick");
+  pick.replaceChildren(el("option", { value: "" }, o.count ? "Choose a song…" : "No songs to choose"),
+    ...o.groups.map((g) => el("optgroup", { label: g.label }, ...g.items.map((i) => el("option", { value: i.value }, i.label)))));
+  pick.disabled = !o.count;
+  const at = $("review").hidden ? "" : musicLogic.pickValue(review.source);
+  pick.value = [...pick.options].some((x) => x.value === at) ? at : "";
+}
+
+// mineSource is where a My songs version's lyric came from, as the finish
+// card saves it back: the version's own answers, style and structure.
+function mineSource(song, v) {
+  const answers = v.answers || song.answers || {};
+  return { kind: "mine", id: song.id, title: song.title, n: v.n, answers, style: v.style || "", structure: v.structure || answers.structure };
+}
+
+// openPick reads the chosen song's latest lyric and opens it. A read that
+// fails says why and changes nothing.
+async function openPick(value) {
+  const p = musicLogic.parsePick(value);
+  if (!p) return;
+  const seq = ++picks.seq;
+  savedSay("");
+  let text = "";
+  let source = null;
+  if (p.kind === "mine") {
+    if (!mine.api || !mine.api.signedIn()) { savedSay("Sign in under My songs first."); drawSaved(); return; }
+    const [s, v] = await Promise.all([mine.api.song(p.id), mine.api.versions(p.id)]);
+    if (seq !== picks.seq) return;
+    if (!s.ok || !v.ok) { savedSay((s.ok ? v : s).error); drawSaved(); return; }
+    const latest = v.versions[0];
+    text = latest ? latest.lyric || "" : "";
+    source = latest && mineSource(s.song, latest);
+    if (!text.trim()) { savedSay(s.song.title + " has no lyric yet."); drawSaved(); return; }
+  } else {
+    const o = await musicHelper.open(fetchFn, p.id);
+    if (seq !== picks.seq) return;
+    if (o.status !== "open") { savedSay(o.message || "musicserve could not open that song."); drawSaved(); return; }
+    text = o.lyric || "";
+    source = { kind: "edit", slug: o.slug || p.id, title: o.title };
+    if (!text.trim()) { savedSay(o.title + " has no lyric yet."); drawSaved(); return; }
+  }
+  openSaved(text, source, true);
 }
 
 function initReview() {
-  $("read").addEventListener("click", () => { review.source = { kind: "paste" }; startReview(); });
+  $("saved-pick").addEventListener("change", () => openPick($("saved-pick").value));
+  $("saved-mine").addEventListener("click", () => showTab("mine", true));
+  $("read").addEventListener("click", () => openReview($("lyrics-in").value, { kind: "paste" }));
   $("reset").addEventListener("click", () => {
+    // Starting over drops this review from the shelf too, so the same lyric
+    // opens fresh.
+    store.set(SHELF, musicLogic.shelve(store.get(SHELF), musicLogic.reviewKey(review.source, $("lyrics-in").value), null));
     review.state = { lines: [], current: 0, undo: [] };
     review.rebuilt = null;
     review.changing = false;
@@ -593,13 +696,11 @@ function initReview() {
     $("paste-card").hidden = false;
     $("finish-said").replaceChildren();
     saveReview();
+    drawSaved();
   });
   $("replace").addEventListener("click", () => {
     const w = review.waiting || { text: "", source: { kind: "paste" } };
-    $("lyrics-in").value = w.text;
-    review.source = w.source;
-    $("finish-said").replaceChildren();
-    startReview();
+    openReview(w.text, w.source);
   });
   $("keep-open").addEventListener("click", () => {
     review.waiting = null;
@@ -646,6 +747,7 @@ function initReview() {
     review.source = saved.source || { kind: "paste" };
     if (saved.statuses && saved.statuses.length) startReview(saved);
   }
+  drawSaved();
   $("lyrics-in").addEventListener("input", () => saveReview());
 }
 
@@ -699,7 +801,8 @@ function editError(text) {
   $("edit-error").textContent = text || "";
 }
 
-async function editOpen(slug) {
+// fill, when the Operator chose the song here, opens it in Review too.
+async function editOpen(slug, fill) {
   editError("");
   $("edit-said").textContent = "";
   if (!slug) { $("edit-song").hidden = true; edit.song = null; return; }
@@ -707,6 +810,8 @@ async function editOpen(slug) {
   if (o.status !== "open") { $("edit-song").hidden = true; edit.song = null; editError(o.message || "musicserve could not open that song."); return; }
   store.set("music.editSong", slug);
   editDraw(o, false);
+  // A song chosen here fills Review too, behind this tab (D5).
+  if (fill && (o.lyric || "").trim()) openSaved(o.lyric, { kind: "edit", slug: o.slug || slug, title: o.title }, false);
 }
 
 async function editSave() {
@@ -737,7 +842,9 @@ async function initEdit() {
   const songs = await musicHelper.songs(fetchFn);
   pick.replaceChildren(el("option", { value: "" }, songs.length ? "Choose a song…" : "No songs in songs/ yet"),
     ...songs.map((x) => el("option", { value: x.slug }, `${x.title} (${x.stage})`)));
-  pick.addEventListener("change", () => editOpen(pick.value));
+  picks.folders = songs;
+  drawSaved();
+  pick.addEventListener("change", () => editOpen(pick.value, true));
   $("edit-lyric").addEventListener("input", () => {
     clearTimeout(edit.timer);
     edit.timer = setTimeout(editShow, 150);
@@ -799,6 +906,7 @@ function mineDraw() {
   if (!mine.api.signedIn()) root.replaceChildren(mineSignIn());
   else if (mine.song) root.replaceChildren(...mineEditor());
   else root.replaceChildren(mineList());
+  drawSaved();
 }
 
 // AUTH_EMAIL keeps the email a sign-in was sent to, in this browser only, so
@@ -878,6 +986,10 @@ async function mineOpen(id, quiet) {
   mine.api.setOpen(id);
   if (!quiet) mineSay(true, "");
   mineDraw();
+  // A song opened here fills Review too, at its latest version, behind this
+  // tab (D5). A quiet reopen, after a save or a reload, leaves Review alone.
+  const latest = mineLatest();
+  if (!quiet && latest && (latest.lyric || "").trim()) openSaved(latest.lyric, mineSource(mine.song, latest), false);
 }
 
 function mineList() {
